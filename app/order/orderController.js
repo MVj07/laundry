@@ -49,7 +49,7 @@ const createOrder = async (req, res, next) => {
             }
         }
         else {
-            const crOrder = await order({ ...orderPayload, customerId: customer }, res)
+            const crOrder = await order({ ...orderPayload, customerId: customer._id }, res)
         }
     } catch (err) {
         return res.status(500).json({
