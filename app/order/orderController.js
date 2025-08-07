@@ -28,6 +28,7 @@ const createOrder = async (req, res, next) => {
 
         const orderPayload = {
             items: data.items,
+            kuri: data.kuri,
             status: data.status
         }
 
@@ -36,7 +37,6 @@ const createOrder = async (req, res, next) => {
 
         if (!customer) {
             const custPayload = {
-                kuri: data.kuri,
                 date: data.date,
                 name: data.customerName,
                 mobile: data.phoneNumber,
