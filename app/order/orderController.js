@@ -22,7 +22,6 @@ const createOrder = async (req, res, next) => {
     try {
         const data = req.body
         console.log(data)
-        const kuri = data.kuri
         const name = data.customerName
         const mobile = data.phoneNumber
 
@@ -33,7 +32,7 @@ const createOrder = async (req, res, next) => {
         }
 
 
-        const customer = await customers.findOne({ kuri, name, mobile })
+        const customer = await customers.findOne({ name, mobile })
 
         if (!customer) {
             const custPayload = {
