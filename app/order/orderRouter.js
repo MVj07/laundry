@@ -1,5 +1,5 @@
 const express = require('express')
-const {createOrder, updateOrder, getAll, getById}= require('./orderController')
+const {createOrder, updateOrder, getAll, getById, deleteOrder}= require('./orderController')
 const authenticateJWT = require('../../services')
 
 const orderRouting = (app) => {
@@ -8,6 +8,7 @@ const orderRouting = (app) => {
     router.put('/', updateOrder)
     router.get('/', getAll)
     router.get('/:id', getById)
+    router.delete('/:id', deleteOrder)
     app.use('/order',authenticateJWT, router)
 }
 

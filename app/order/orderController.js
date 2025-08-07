@@ -136,4 +136,26 @@ const getById=async(req, res, next)=>{
     }
 }
 
-module.exports = { createOrder, updateOrder, getAll, getById }
+const deleteOrder=async(req, res, next)=>{
+    try{
+        const _id = req.query.id
+        const item = await orders.findOne(_id)
+        if (!item){
+            return res.status(404).json({
+                message: 'Order not found'
+            })
+        }
+        const deleted = await item.deleteOne()
+        return res.status(200).json({
+            message: "Order deleted successfully",
+            data: deleted
+        })
+    } catch (err) {
+        return res.status(500).json({
+            message: "Something went wrong",
+            data: err?.message
+        })
+    }
+}
+
+module.exports = { createOrder, updateOrder, getAll, getById, deleteOrder }
