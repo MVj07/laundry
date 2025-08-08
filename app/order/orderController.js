@@ -92,7 +92,7 @@ const updateOrder = async (req, res, next) => {
             }
         }
         // console.log(updateData)
-        const updtOrder = await orders.updateOne({ customerId: customer._id }, { $set: updateData })
+        const updtOrder = await orders.updateOne({ customerId: customer._id, _id:data.orderId }, { $set: updateData })
         if (updtOrder) {
             return res.status(200).json({
                 message: "Updated order successfully"
