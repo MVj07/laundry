@@ -77,7 +77,7 @@ const updateOrder = async (req, res, next) => {
         if (data?.items) updateData.items = data.items;
         if (data?.status) updateData.status = data.status
 
-        const order = await orders.findOne({customerId: customer._id})
+        const order = await orders.findOne({customerId: customer._id, _id:data._id})
         if (!order){
             return res.status(500).json({
                 message:"Order not found"
