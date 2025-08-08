@@ -108,7 +108,10 @@ const updateOrder = async (req, res, next) => {
 
 const getAll = async(req, res, next) => {
     try {
-        const item = await orders.find({}).populate('customerId')
+        const condition={}
+        condition.status = req.query.status??{}
+        console.log(condition)
+        const item = await orders.find(condition).populate('customerId')
         return res.status(200).json({
             data: item
         })
