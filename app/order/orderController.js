@@ -113,7 +113,7 @@ const getAll = async(req, res, next) => {
             condition.status=req.query.status
         }
         console.log(condition)
-        const item = await orders.find(condition).populate('customerId')
+        const item = await orders.find(condition).populate('customerId').sort({createdAt:1})
         return res.status(200).json({
             data: item
         })
