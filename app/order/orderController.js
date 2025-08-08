@@ -61,12 +61,12 @@ const createOrder = async (req, res, next) => {
 const updateOrder = async (req, res, next) => {
     try {
         const data = req.body
-        if (!data.customerName && !data.kuri && !data.phoneNumber && !data.type) {
+        if (!data.customerId && !data.kuri  && !data.type) {
             return res.status(500).json({
                 message: "one of the fields were missing"
             })
         }
-        const customer = await customers.findOne({ kuri: data.kuri, name: data.customerName, mobile: data.phoneNumber })
+        const customer = await customers.findOne({ _id: data.customerId })
         if (!customer) {
             return res.status(500).json({
                 message: 'Customer not found'
@@ -77,7 +77,7 @@ const updateOrder = async (req, res, next) => {
         if (data?.items) updateData.items = data.items;
         if (data?.status) updateData.status = data.status
 
-        const order = await orders.findOne({customerId: customer._id, _id:data._id})
+        const order = await orders.findOne({customerId: customer._id, _id:data.orderId})
         if (!order){
             return res.status(500).json({
                 message:"Order not found"
