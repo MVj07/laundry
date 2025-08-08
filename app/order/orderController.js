@@ -28,7 +28,8 @@ const createOrder = async (req, res, next) => {
         const orderPayload = {
             items: data.items,
             kuri: data.kuri,
-            status: data.status
+            status: data.status,
+            p:1
         }
 
 
