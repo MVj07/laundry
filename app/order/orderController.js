@@ -3,6 +3,12 @@ const customers = require('../../models/customerModel')
 
 const order = async (data, res) => {
     try {
+        const exist=await orders.findOne({kuri:data.kuri})
+        if(exist){
+            return res.status(500).json({
+                message:'Same order kuri not allowed.'
+            })
+        }
         const order = await orders.create(data)
         if (order) {
             return res.status(201).json({
@@ -109,14 +115,22 @@ const updateOrder = async (req, res, next) => {
 
 const getAll = async(req, res, next) => {
     try {
+        const { search, page = 1, limit = 10 } = req.query;
         const condition={}
         if (req.query.status!=='null'){
             condition.status=req.query.status
         }
         console.log(condition)
-        const item = await orders.find(condition).populate('customerId').sort({createdAt:1})
+        const skip = (parseInt(page) - 1) * parseInt(limit);
+        const [items,total] = await Promise.all([orders.find(condition).skip(skip).limit(parseInt(limit)).populate('customerId').sort({createdAt:1}),orders.countDocuments(condition)])
         return res.status(200).json({
-            data: item
+            data: items,
+            meta: {
+            total,
+            page: parseInt(page),
+            limit: parseInt(limit),
+            totalPages: Math.ceil(total / parseInt(limit))
+        }
         })
     } catch (err) {
         return res.status(500).json({

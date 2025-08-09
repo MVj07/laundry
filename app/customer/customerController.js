@@ -2,7 +2,15 @@ const customer = require('../../models/customerModel')
 
 const getAll = async (req, res, next) => {
     try {
-        const item = await customer.find()
+        const condition={}
+        const search=req.query?.search
+        if (search){
+            condition.$or=[
+                {name:{$regex: search, $options:'i'}},
+                {mobile:{$regex: search, $options:'i'}}
+            ]
+        }
+        const item = await customer.find(condition)
         return res.status(200).json({
             data: item
         })
