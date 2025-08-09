@@ -16,8 +16,9 @@ const getAll = async (req, res, next) => {
 
 const getById=async(req, res, next)=>{
     try{
-        const _id = req.query.id
-        const item = await customer.findOne(_id)
+        const _id = req.params.id
+        console.log(_id)
+        const item = await customer.findOne({_id})
         return res.status(200).json({
             data: item
         })
