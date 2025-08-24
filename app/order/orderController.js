@@ -35,7 +35,8 @@ const createOrder = async (req, res, next) => {
             items: data.items,
             kuri: data.kuri,
             status: data.status,
-            p:1
+            p:1,
+            date: new Date(data.date)
         }
 
 

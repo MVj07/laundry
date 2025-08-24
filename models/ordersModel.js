@@ -4,6 +4,7 @@ const orderSchema = new mongoose.Schema({
     items: { type: Array },
     status: { type: String, default: "washing" },
     kuri: { type: Number, required: true },
+    date: {type: Date}
     // createdAt: { type: Date },
     // updatedAt: { type: Date }
 },{timestamps:true})
