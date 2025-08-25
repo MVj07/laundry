@@ -123,7 +123,7 @@ const getAll = async(req, res, next) => {
         }
         console.log(condition)
         const skip = (parseInt(page) - 1) * parseInt(limit);
-        const [items,total] = await Promise.all([orders.find(condition).skip(skip).limit(parseInt(limit)).populate('customerId').sort({createdAt:1}),orders.countDocuments(condition)])
+        const [items,total] = await Promise.all([orders.find(condition).skip(skip).limit(parseInt(limit)).populate('customerId').sort({updatedAt:1}),orders.countDocuments(condition)])
         return res.status(200).json({
             data: items,
             meta: {
