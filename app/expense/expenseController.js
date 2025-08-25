@@ -21,7 +21,7 @@ const getAll = async (req, res, next) => {
         const { type, page, limit } = req.query
         let filter = {};
         const now = new Date()
-        if (type === "today") {
+        if (type === "Today") {
             const start = new Date();
             start.setHours(0, 0, 0, 0);
 
@@ -30,7 +30,7 @@ const getAll = async (req, res, next) => {
 
             filter.createdAt = { $gte: start, $lte: end };
         }
-        else if (type === "month") {
+        else if (type === "This Month") {
             const start = new Date(now.getFullYear(), now.getMonth(), 1);
             const end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
 
