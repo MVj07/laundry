@@ -18,23 +18,31 @@ const create = async (req, res, next) => {
 
 const getAll = async (req, res, next) => {
     try {
-        const type = req.params.type
+        const { type, page, limit } = req.query
         let filter = {};
         const now = new Date()
         if (type === "today") {
-            const start = new Date(now.setHours(0, 0, 0, 0));
-            const end = new Date(now.setHours(23, 59, 59, 999));
-            filter.date = { $gte: start, $lte: end };
+            const start = new Date();
+            start.setHours(0, 0, 0, 0);
 
-        } else if (type === "month") {
-            const start = new Date(now.getFullYear(), now.getMonth(), 1);  // 1st day of month
-            const end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999); // last day of month
-            filter.date = { $gte: start, $lte: end };
+            const end = new Date();
+            end.setHours(23, 59, 59, 999);
+
+            filter.createdAt = { $gte: start, $lte: end };
         }
-        let expenses = await expense.find(filter)
+        else if (type === "month") {
+            const start = new Date(now.getFullYear(), now.getMonth(), 1);
+            const end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+
+            filter.createdAt = { $gte: start, $lte: end };
+        }
+        console.log(filter)
+        const skip = (page - 1) * limit;
+
+        let expenses = await expense.find(filter).skip(skip).limit(parseInt(limit))
 
         return res.status(200).json({
-            message:"Success",
+            message: "Success",
             data: expenses
         })
     } catch (err) {

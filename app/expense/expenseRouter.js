@@ -4,7 +4,7 @@ const { create, getAll } = require('./expenseController')
 
 const expenseRouting = (app) => {
     const router = express.Router()
-    router.get('/:type', getAll)
+    router.get('/', getAll)
     router.post('/', create)
     app.use('/expense', authenticateJWT, router)
 }
