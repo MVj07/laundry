@@ -39,11 +39,17 @@ const getAll = async (req, res, next) => {
         console.log(filter)
         const skip = (page - 1) * limit;
 
-        let expenses = await expense.find(filter).skip(skip).limit(parseInt(limit))
-
+        // let expenses = await expense.find(filter).skip(skip).limit(parseInt(limit))
+        const [expenses,total] = await Promise.all([expense.find(filter).skip(skip).limit(parseInt(limit)),expense.countDocuments(filter)])
         return res.status(200).json({
             message: "Success",
-            data: expenses
+            data: expenses,
+            meta: {
+            total,
+            page: parseInt(page),
+            limit: parseInt(limit),
+            totalPages: Math.ceil(total / parseInt(limit))
+        }
         })
     } catch (err) {
         return res.status(500).json({
