@@ -39,6 +39,12 @@ const createOrder = async (req, res, next) => {
             date: new Date(data.date)
         }
 
+        const existCustomer = await customers.find({mobile})
+        if (existCustomer){
+            return res.status(500).json({
+                message:"Phone number already exist."
+            })
+        }
 
         const customer = await customers.findOne({ name, mobile })
 
