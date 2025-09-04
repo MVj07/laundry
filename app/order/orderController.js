@@ -93,7 +93,7 @@ const updateOrder = async (req, res, next) => {
         }
 
         if (data.type==='item'){
-            if(order.status!=='washing'){
+            if(order.status!==''){
                 return res.status(500).json({
                     message: 'Cannot update.'
                 })
