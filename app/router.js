@@ -6,6 +6,8 @@ const orderRouting = require('./order/orderRouter');
 const itemsRouting = require('./items/itemsRouter');
 const customerRouting = require('./customer/customerRouter');
 const expenseRouting = require('./expense/expenseRouter');
+const settingsRouting = require('./settings/setting_routes');
+
 
 router.get('/', async function(req, res, next){
   const i = await items.find()
@@ -18,6 +20,8 @@ const routes=(app)=>{
     itemsRouting(app)
     customerRouting(app)
     expenseRouting(app)
+    settingsRouting(app)
+
 }
 
 module.exports=routes

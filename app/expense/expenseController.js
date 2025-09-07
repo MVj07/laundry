@@ -40,16 +40,16 @@ const getAll = async (req, res, next) => {
         const skip = (page - 1) * limit;
 
         // let expenses = await expense.find(filter).skip(skip).limit(parseInt(limit))
-        const [expenses,total] = await Promise.all([expense.find(filter).skip(skip).limit(parseInt(limit)),expense.countDocuments(filter)])
+        const [expenses, total] = await Promise.all([expense.find(filter).skip(skip).limit(parseInt(limit)), expense.countDocuments(filter)])
         return res.status(200).json({
             message: "Success",
             data: expenses,
             meta: {
-            total,
-            page: parseInt(page),
-            limit: parseInt(limit),
-            totalPages: Math.ceil(total / parseInt(limit))
-        }
+                total,
+                page: parseInt(page),
+                limit: parseInt(limit),
+                totalPages: Math.ceil(total / parseInt(limit))
+            }
         })
     } catch (err) {
         return res.status(500).json({
@@ -59,4 +59,63 @@ const getAll = async (req, res, next) => {
     }
 }
 
-module.exports = { create, getAll }
+const getExpensesByDay = async (req, res, next) => {
+    try {
+        const start = new Date();
+        start.setHours(0, 0, 0, 0);
+
+        const end = new Date();
+        end.setHours(23, 59, 59, 999);
+
+        const expenses = await expense.find({
+            createdAt: { $gte: start, $lte: end }
+        });
+
+        res.json({ status: 200, data: expenses });
+    } catch (error) {
+        next(error);
+    }
+};
+
+
+const getExpensesByMonth = async (req, res, next) => {
+    try {
+        const now = new Date();
+        const start = new Date(now.getFullYear(), now.getMonth(), 1);
+        const end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+
+        const expenses = await expense.find({
+            createdAt: { $gte: start, $lte: end }
+        });
+
+        res.json({ status: 200, data: expenses });
+    } catch (error) {
+        next(error);
+    }
+};
+
+const getExpensesByDate = async (req, res) => {
+    try {
+        const { date } = req.body;
+        if (!date) {
+            return res.status(400).json({ message: "Date is required" });
+        }
+
+        const start = new Date(date);
+        start.setHours(0, 0, 0, 0);
+
+        const end = new Date(date);
+        end.setHours(23, 59, 59, 999);
+
+        const expenses = await expense.find({
+            createdAt: { $gte: start, $lte: end }
+        });
+
+        return res.status(200).json({ status: 200, data: expenses });
+    } catch (err) {
+        console.error(err);
+        return res.status(500).json({ status: 500, message: "Something went wrong", error: err.message });
+    }
+};
+
+module.exports = { create, getAll, getExpensesByDay, getExpensesByMonth, getExpensesByDate }
