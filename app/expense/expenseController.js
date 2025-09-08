@@ -79,18 +79,63 @@ const getExpensesByDay = async (req, res, next) => {
 
 
 const getExpensesByMonth = async (req, res, next) => {
+    // try {
+    //     const now = new Date();
+    //     const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    //     const end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+
+    //     const expenses = await expense.find({
+    //         createdAt: { $gte: start, $lte: end }
+    //     });
+
+    //     res.json({ status: 200, data: expenses });
+    // } catch (error) {
+    //     next(error);
+    // }
+    const { month, year } = req.body;
+
+    // Convert to integers
+    const numericMonth = parseInt(month); // e.g. "2" → 2
+    const numericYear = parseInt(year);   // e.g. "2025" → 2025
+    
     try {
-        const now = new Date();
-        const start = new Date(now.getFullYear(), now.getMonth(), 1);
-        const end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
-
-        const expenses = await expense.find({
-            createdAt: { $gte: start, $lte: end }
-        });
-
-        res.json({ status: 200, data: expenses });
+      const startDate = new Date(numericYear, numericMonth - 1, 1); // Feb 1, 2025
+      const endDate = new Date(numericYear, numericMonth, 0, 23, 59, 59, 999); // Feb 28, 2025
+    
+      console.log('Filtering from:', startDate.toISOString(), 'to', endDate.toISOString());
+    
+      
+      const data = await expense.aggregate([
+        {
+            $match: {
+              createdAt: { $gte: startDate, $lte: endDate }
+            }
+          },
+          {
+            $group: {
+              _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
+              totalAmount: { $sum: { $multiply: ["$quantity", "$unitprice"] } }
+            }
+          },
+          {
+            $project: {
+              _id: 0,
+              date: "$_id",
+              totalAmount: 1
+            }
+          },
+          {
+            $sort: { date: 1 }
+          }
+      ]);
+    
+    
+      res.json({ success: true, data });    
     } catch (error) {
-        next(error);
+        console.error(error);
+
+        // Make sure to return or end function here, so no more res calls happen:
+        return res.status(500).json({ success: false, message: 'Server Error' });
     }
 };
 
