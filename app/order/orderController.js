@@ -3,7 +3,7 @@ const customers = require('../../models/customerModel')
 
 const order = async (data, res) => {
     try {
-        const exist=await orders.findOne({kuri:data.kuri})
+        const exist=await orders.findOne({bill:data.bill})
         if(exist){
             return res.status(500).json({
                 message:'Same order kuri not allowed.'
@@ -33,7 +33,7 @@ const createOrder = async (req, res, next) => {
 
         const orderPayload = {
             items: data.items,
-            kuri: data.kuri,
+            bill: data.bill,
             status: data.status,
             p:1,
             date: new Date(data.date)
@@ -47,7 +47,8 @@ const createOrder = async (req, res, next) => {
                 date: data.date,
                 name: data.customerName,
                 mobile: data.phoneNumber,
-                address: data.address
+                address: data.address,
+                kuri: data.kuri
             }
             const createCustomer = await customers.create(custPayload)
 
@@ -69,7 +70,7 @@ const createOrder = async (req, res, next) => {
 const updateOrder = async (req, res, next) => {
     try {
         const data = req.body
-        if (!data.customerId && !data.kuri  && !data.type) {
+        if (!data.customerId && !data.bill  && !data.type) {
             return res.status(500).json({
                 message: "one of the fields were missing"
             })
