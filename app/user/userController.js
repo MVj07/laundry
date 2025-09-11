@@ -1,5 +1,5 @@
 const users = require('../../models/usersModel')
-const { jwtSecret, jwtExpire } = require('../../services/config')
+const { jwtSecret } = require('../../services/config')
 const jwt = require('jsonwebtoken')
 const bcrypt = require('bcryptjs')
 
@@ -23,7 +23,7 @@ const Login = async (req, res, next) => {
         const token = jwt.sign(
             { id: user._id, name: user.name, type: user.type },
             jwtSecret,
-            { expiresIn: jwtExpire }
+            // { expiresIn: jwtExpire }
         );
 
         return res.json({ status: true, message: 'Login successful', user, token });
