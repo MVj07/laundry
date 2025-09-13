@@ -1,12 +1,13 @@
 const orders = require('../../models/ordersModel')
 const customers = require('../../models/customerModel')
+const { default: mongoose } = require('mongoose')
 
 const order = async (data, res) => {
     try {
-        const exist=await orders.findOne({bill:data.bill})
-        if(exist){
+        const exist = await orders.findOne({ bill: data.bill })
+        if (exist) {
             return res.status(500).json({
-                message:'Same order kuri not allowed.'
+                message: 'Same order kuri not allowed.'
             })
         }
         const order = await orders.create(data)
@@ -35,7 +36,7 @@ const createOrder = async (req, res, next) => {
             items: data.items,
             bill: data.bill,
             status: data.status,
-            p:1,
+            p: 1,
             date: new Date(data.date)
         }
 
@@ -70,7 +71,7 @@ const createOrder = async (req, res, next) => {
 const updateOrder = async (req, res, next) => {
     try {
         const data = req.body
-        if (!data.customerId && !data.bill  && !data.type) {
+        if (!data.customerId && !data.bill && !data.type) {
             return res.status(500).json({
                 message: "one of the fields were missing"
             })
@@ -86,22 +87,22 @@ const updateOrder = async (req, res, next) => {
         if (data?.items) updateData.items = data.items;
         if (data?.status) updateData.status = data.status
 
-        const order = await orders.findOne({customerId: customer._id, _id:data.orderId})
-        if (!order){
+        const order = await orders.findOne({ customerId: customer._id, _id: data.orderId })
+        if (!order) {
             return res.status(500).json({
-                message:"Order not found"
+                message: "Order not found"
             })
         }
 
-        if (data.type==='item'){
-            if(order.status!==''){
+        if (data.type === 'item') {
+            if (order.status !== '') {
                 return res.status(500).json({
                     message: 'Cannot update.'
                 })
             }
         }
         // console.log(updateData)
-        const updtOrder = await orders.updateOne({ customerId: customer._id, _id:data.orderId }, { $set: {...updateData, date: new Date()} })
+        const updtOrder = await orders.updateOne({ customerId: customer._id, _id: data.orderId }, { $set: { ...updateData, date: new Date() } })
         if (updtOrder) {
             return res.status(200).json({
                 message: "Updated order successfully"
@@ -115,24 +116,24 @@ const updateOrder = async (req, res, next) => {
     }
 }
 
-const getAll = async(req, res, next) => {
+const getAll = async (req, res, next) => {
     try {
         const { search, page = 1, limit = 10 } = req.query;
-        const condition={}
-        if (req.query.status!=='null'){
-            condition.status=req.query.status
+        const condition = {}
+        if (req.query.status !== 'null') {
+            condition.status = req.query.status
         }
         console.log(condition)
         const skip = (parseInt(page) - 1) * parseInt(limit);
-        const [items,total] = await Promise.all([orders.find(condition).skip(skip).limit(parseInt(limit)).populate('customerId').sort({date:1}),orders.countDocuments(condition)])
+        const [items, total] = await Promise.all([orders.find(condition).skip(skip).limit(parseInt(limit)).populate('customerId').sort({ date: 1 }), orders.countDocuments(condition)])
         return res.status(200).json({
             data: items,
             meta: {
-            total,
-            page: parseInt(page),
-            limit: parseInt(limit),
-            totalPages: Math.ceil(total / parseInt(limit))
-        }
+                total,
+                page: parseInt(page),
+                limit: parseInt(limit),
+                totalPages: Math.ceil(total / parseInt(limit))
+            }
         })
     } catch (err) {
         return res.status(500).json({
@@ -142,8 +143,8 @@ const getAll = async(req, res, next) => {
     }
 }
 
-const getById=async(req, res, next)=>{
-    try{
+const getById = async (req, res, next) => {
+    try {
         const _id = req.query.id
         const item = await orders.findOne(_id)
         return res.status(200).json({
@@ -157,11 +158,11 @@ const getById=async(req, res, next)=>{
     }
 }
 
-const deleteOrder=async(req, res, next)=>{
-    try{
+const deleteOrder = async (req, res, next) => {
+    try {
         const _id = req.query.id
         const item = await orders.findOne(_id)
-        if (!item){
+        if (!item) {
             return res.status(404).json({
                 message: 'Order not found'
             })
@@ -179,20 +180,36 @@ const deleteOrder=async(req, res, next)=>{
     }
 }
 
-const overallsearch=async(req, res)=>{
+const overallsearch = async (req, res) => {
     const { search } = req.body;
 
     try {
-      const results = await orders.findOne({
-        // bill: { $regex: new RegExp(search, 'i') } // case-insensitive partial match
-        bill: Number(search)
-      });
-  
-      res.json({ success: true, data: results });
+        const results = await orders.findOne({
+            // bill: { $regex: new RegExp(search, 'i') } // case-insensitive partial match
+            bill: Number(search)
+        });
+
+        res.json({ success: true, data: results });
     } catch (error) {
-      console.error('Search error:', error);
-      res.status(500).json({ success: false, message: 'Server Error' });
+        console.error('Search error:', error);
+        res.status(500).json({ success: false, message: 'Server Error' });
     }
 }
 
-module.exports = { createOrder, updateOrder, getAll, getById, deleteOrder, overallsearch }
+const bulkUpdate = async (req, res) => {
+    try {
+        const { orderIds, status } = req.body
+        console.log(orderIds, status)
+        const ids = orderIds.map(id => new mongoose.Types.ObjectId(id))
+        const result = await orders.updateMany({ _id: { $in: ids } }, { $set: { status: status } })
+        return res.status(200).json({
+            message: "Orders updated successfully",
+            matchedCount: result.matchedCount,
+            modifiedCount: result.modifiedCount
+        });
+    } catch (error) {
+        console.error('Search error:', error);
+        res.status(500).json({ success: false, message: 'Server Error' });
+    }
+}
+module.exports = { createOrder, updateOrder, getAll, getById, deleteOrder, overallsearch, bulkUpdate }
