@@ -67,20 +67,6 @@ const deleteItem=async(req, res)=>{
         });
     }
 }
-const overallsearch=async(req, res)=>{
-    const { search } = req.body;
-
-    try {
-      const results = await orders.find({
-        kuri: { $regex: new RegExp(search, 'i') } // case-insensitive partial match
-      });
-  
-      res.json({ success: true, data: results });
-    } catch (error) {
-      console.error('Search error:', error);
-      res.status(500).json({ success: false, message: 'Server Error' });
-    }
-}
 
 
-module.exports = { getAll, getById, createItem, deleteItem ,overallsearch }
+module.exports = { getAll, getById, createItem, deleteItem }

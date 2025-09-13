@@ -179,4 +179,20 @@ const deleteOrder=async(req, res, next)=>{
     }
 }
 
-module.exports = { createOrder, updateOrder, getAll, getById, deleteOrder }
+const overallsearch=async(req, res)=>{
+    const { search } = req.body;
+
+    try {
+      const results = await orders.findOne({
+        // bill: { $regex: new RegExp(search, 'i') } // case-insensitive partial match
+        bill: Number(search)
+      });
+  
+      res.json({ success: true, data: results });
+    } catch (error) {
+      console.error('Search error:', error);
+      res.status(500).json({ success: false, message: 'Server Error' });
+    }
+}
+
+module.exports = { createOrder, updateOrder, getAll, getById, deleteOrder, overallsearch }

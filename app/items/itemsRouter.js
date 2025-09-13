@@ -8,7 +8,7 @@ const itemsRouting = (app) => {
     router.get('/:id', getById)
     router.post('/create', createItem)
     router.post('/delete', deleteItem)
-    router.post('/search', overallsearch)
+    // router.post('/search', overallsearch)
     app.use('/items', authenticateJWT, router)
 }
 
