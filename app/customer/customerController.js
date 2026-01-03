@@ -3,6 +3,7 @@ const customer = require('../../models/customerModel')
 const getAll = async (req, res, next) => {
     try {
         const condition={}
+        condition.user_id=req.user.id
         const search=req.query?.search
         if (search){
             condition.$or=[

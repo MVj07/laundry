@@ -3,7 +3,9 @@ const orders = require('../../models/ordersModel')
 
 const getAll = async (req, res, next) => {
     try {
-        const item = await items.find()
+        let condition={}
+        condition.user_id=req.user.id
+        const item = await items.find(condition)
         return res.status(200).json({
             data: item
         })
@@ -15,8 +17,8 @@ const getAll = async (req, res, next) => {
     }
 }
 
-const getById=async(req, res, next)=>{
-    try{
+const getById = async (req, res, next) => {
+    try {
         const _id = req.query.id
         const item = await items.findOne(_id)
         return res.status(200).json({
@@ -32,7 +34,8 @@ const getById=async(req, res, next)=>{
 
 const createItem = async (req, res, next) => {
     try {
-        const data = req.body; // Expecting an array of items
+        const userId = req.user.id;
+        const data = req.body; // expecting array
 
         if (!Array.isArray(data)) {
             return res.status(400).json({
@@ -40,10 +43,16 @@ const createItem = async (req, res, next) => {
             });
         }
 
-        await items.insertMany(data);
+        // add user_id to each item
+        const itemsWithUser = data.map(item => ({
+            ...item,
+            user_id: userId
+        }));
+
+        await items.insertMany(itemsWithUser);
 
         return res.status(201).json({
-            message: "New items created."
+            message: "New items created successfully"
         });
     } catch (err) {
         return res.status(500).json({
@@ -53,10 +62,11 @@ const createItem = async (req, res, next) => {
     }
 };
 
-const deleteItem=async(req, res)=>{
-    try{
+
+const deleteItem = async (req, res) => {
+    try {
         const id = req.body.itemId
-        const deleted = await items.deleteOne({_id: id})
+        const deleted = await items.deleteOne({ _id: id })
         return res.status(201).json({
             message: "Item deleted."
         });

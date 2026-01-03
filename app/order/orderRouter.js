@@ -1,5 +1,5 @@
 const express = require('express')
-const {createOrder, updateOrder, getAll, getById, deleteOrder, overallsearch, bulkUpdate}= require('./orderController')
+const {createOrder, updateOrder, getAll, getById, deleteOrder, overallsearch, bulkUpdate, generateInvoice}= require('./orderController')
 const authenticateJWT = require('../../services')
 
 const orderRouting = (app) => {
@@ -11,6 +11,7 @@ const orderRouting = (app) => {
     router.delete('/:id', deleteOrder)
     router.post('/search', overallsearch)
     router.put('/bulkUpdate', bulkUpdate)
+    router.post('/generate-invoice/:id', generateInvoice)
     app.use('/order',authenticateJWT, router)
 }
 

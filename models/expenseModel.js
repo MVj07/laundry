@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const expenseSchema = new mongoose.Schema({
+    user_id: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     item: { type: String, required: true },
     quantity: { type: Number, required: true },
     unitprice: { type: Number, required: true },

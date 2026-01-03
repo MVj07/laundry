@@ -9,7 +9,7 @@ const Login = async (req, res, next) => {
         // const users = [{ name: "surya", password: "123456789" }]
         const { name, password } = req.body
         // const user = users.find(u => u.name === name && u.password === password);
-        const user = await users.findOne({ name })
+        const user = await users.findOne({ username:name })
         console.log(user)
         if (!user) {
             return res.json({ status: false, message: 'User not found' })

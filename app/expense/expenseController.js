@@ -3,7 +3,8 @@ const expense = require('../../models/expenseModel')
 const create = async (req, res, next) => {
     try {
         const data = req.body;
-        let createexpense = await expense.create(data)
+        const userId = req.user.id
+        let createexpense = await expense.create({...data, user_id: userId})
         return res.status(201).json({
             message: 'Expense created',
             data: createexpense
@@ -20,6 +21,7 @@ const getAll = async (req, res, next) => {
     try {
         const { type, page, limit } = req.query
         let filter = {};
+        filter.user_id=req.user.id
         const now = new Date()
         if (type === "today") {
             const start = new Date();
@@ -111,16 +113,19 @@ const getExpensesByMonth = async (req, res, next) => {
               createdAt: { $gte: startDate, $lte: endDate }
             }
           },
-          {
-            $group: {
-              _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
-              totalAmount: { $sum: { $multiply: ["$quantity", "$unitprice"] } }
-            }
-          },
+        //   {
+        //     $group: {
+        //       _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
+        //       totalAmount: { $sum: { $multiply: ["$quantity", "$unitprice"] } }
+        //     }
+        //   },
           {
             $project: {
               _id: 0,
-              date: "$_id",
+              date: "$createdAt",
+              item: "$item",
+              quantity: "$quantity",
+              unitprice: "$unitprice",
               totalAmount: 1
             }
           },

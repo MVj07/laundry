@@ -2,8 +2,12 @@ const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs')
 const userSchema = new mongoose.Schema({
     name: { type: String, required: true },
-    type: { type: String, required: true },
+    // type: { type: String, required: true },
     password: { type: String, required: true },
+    is_profile_completed: { type: Boolean, default: false },
+    business_id: { type: mongoose.Schema.Types.ObjectId, ref: "Business" },
+    email: {type: String, required: true, unique: true},
+    username: {type: String, required: true, unique: true}
     // createdAt: { type: Date },
     // updatedAt: { type: Date }
 },{timestamps:true})
