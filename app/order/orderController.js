@@ -108,18 +108,37 @@ const createOrder = async (req, res, next) => {
         const billNo = await generateBillNo();
         console.log(billNo)
 
+        // Resolve services
+        let selectedServices = [];
+        if (Array.isArray(data.services) && data.services.length > 0) {
+            const ServiceModel = require('../../models/serviceModel');
+            const foundServices = await ServiceModel.find({
+                user_id: userId,
+                $or: [
+                    { _id: { $in: data.services.filter(id => mongoose.isValidObjectId(id)) } },
+                    { name: { $in: data.services } }
+                ]
+            });
+            selectedServices = foundServices.map(s => ({
+                serviceId: s._id,
+                name: s.name,
+                status: 'pending'
+            }));
+        }
+
         const orderPayload = {
             user_id: userId,
             items: data.items,
-            // billAmount: data.bill,  // actual total amount
-            status: data.status,
+            type: data.type || 'item',
+            status: data.status || 'confirm',
             date: new Date(data.date),
             dueDate: data.dueDate ? new Date(data.dueDate) : null,
             specialInstructions: data.specialInstructions || '',
             bill: billNo,
             billAmount: data?.items?.reduce((sum, item)=>{
-                return sum+(item.qty*item.amount);
-            }, 0)
+                return sum + (parseFloat(item.qty || 0) * parseFloat(item.amount || 0));
+            }, 0),
+            services: selectedServices
         };
 
         // Find or create customer
@@ -175,17 +194,42 @@ const updateOrder = async (req, res, next) => {
             })
         }
 
-        const updateData = {}
-        if (data?.items) updateData.items = data.items;
-        if (data?.status) updateData.status = data.status;
-        if (data?.dueDate) updateData.dueDate = new Date(data.dueDate);
-        if (data?.specialInstructions !== undefined) updateData.specialInstructions = data.specialInstructions;
-
         const order = await orders.findOne({ customerId: customer._id, _id: data.orderId })
         if (!order) {
             return res.status(500).json({
                 message: "Order not found"
             })
+        }
+
+        const updateData = {}
+        if (data?.items) {
+            updateData.items = data.items;
+            updateData.billAmount = data.items.reduce((sum, item)=>{
+                return sum + (parseFloat(item.qty || 0) * parseFloat(item.amount || 0));
+            }, 0);
+        }
+        if (data?.status) updateData.status = data.status;
+        if (data?.dueDate) updateData.dueDate = new Date(data.dueDate);
+        if (data?.specialInstructions !== undefined) updateData.specialInstructions = data.specialInstructions;
+        if (data?.type && (data.type === 'item' || data.type === 'kg')) updateData.type = data.type;
+
+        if (data?.services) {
+            const ServiceModel = require('../../models/serviceModel');
+            const foundServices = await ServiceModel.find({
+                user_id: req.user.id,
+                $or: [
+                    { _id: { $in: data.services.filter(id => mongoose.isValidObjectId(id)) } },
+                    { name: { $in: data.services } }
+                ]
+            });
+            updateData.services = foundServices.map(s => {
+                const existing = order.services ? order.services.find(es => es.serviceId.toString() === s._id.toString()) : null;
+                return {
+                    serviceId: s._id,
+                    name: s.name,
+                    status: existing ? existing.status : 'pending'
+                };
+            });
         }
 
         // if (data.type === 'item') {
@@ -708,4 +752,41 @@ const recordPayment = async (req, res) => {
     }
 };
 
-module.exports = { createOrder, updateOrder, getAll, getById, deleteOrder, overallsearch, bulkUpdate, generateInvoice, getDashboardMetrics, barcodeUpdate, recordPayment }
+const updateOrderServiceStatus = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { serviceId, status } = req.body;
+
+        if (!serviceId || !status) {
+            return res.status(400).json({ message: "serviceId and status are required" });
+        }
+
+        const order = await orders.findOne({ _id: id, user_id: req.user.id });
+        if (!order) {
+            return res.status(404).json({ message: "Order not found" });
+        }
+
+        const serviceIndex = order.services.findIndex(s => s.serviceId.toString() === serviceId.toString());
+        if (serviceIndex === -1) {
+            return res.status(404).json({ message: "Service not found on this order" });
+        }
+
+        order.services[serviceIndex].status = status;
+        
+        await order.save();
+
+        const updatedOrder = await orders.findById(id).populate('customerId');
+
+        return res.status(200).json({
+            message: "Service status updated successfully",
+            data: updatedOrder
+        });
+    } catch (err) {
+        return res.status(500).json({
+            message: "Something went wrong",
+            error: err.message
+        });
+    }
+};
+
+module.exports = { createOrder, updateOrder, getAll, getById, deleteOrder, overallsearch, bulkUpdate, generateInvoice, getDashboardMetrics, barcodeUpdate, recordPayment, updateOrderServiceStatus }

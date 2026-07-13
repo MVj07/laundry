@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 const bodyParser = require('body-parser');
 const cors = require('cors');
 const router = express.Router()
-const items = require('./models/itemsModel');
+// const items = require('./models/itemsModel');
 const routes = require('./app/router');
 // const authRoutes = require('./routes/auth'/);
 
@@ -31,6 +31,13 @@ async function connectDB() {
   try {
     await mongoose.connect(MONGO_URI);
     console.log("MongoDB connected");
+    
+    // Clean up any corrupted 'type' values from previous runs
+    const orders = require('./models/ordersModel');
+    const result = await orders.updateMany({ type: 'status' }, { $set: { type: 'item' } });
+    if (result.modifiedCount > 0) {
+      console.log(`Database Migration: Repaired ${result.modifiedCount} order(s) with invalid type 'status' to 'item'.`);
+    }
   } catch (err) {
     console.error("MongoDB connection failed:", err);
   }
