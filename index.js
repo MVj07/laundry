@@ -9,7 +9,7 @@ const routes = require('./app/router');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/Laundry';
+const MONGO_URI = process.env.MONGO_URI
 
 // Middleware
 app.use(cors());
@@ -31,7 +31,7 @@ async function connectDB() {
   try {
     await mongoose.connect(MONGO_URI);
     console.log("MongoDB connected");
-    
+
     // Clean up any corrupted 'type' values from previous runs
     const orders = require('./models/ordersModel');
     const result = await orders.updateMany({ type: 'status' }, { $set: { type: 'item' } });
