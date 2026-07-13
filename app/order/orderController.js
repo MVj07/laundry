@@ -14,14 +14,13 @@ const businessModel = require('../../models/businessModel');
 //     // padded 5 digits like 00001, 00002
 //     return "LDY-" + nextNumber.toString().padStart(5, "0");
 // };
-const generateBillNo = async (userId) => {
+const generateBillNo = async () => {
     const lastOrder = await orders
-        .findOne({user_id: userId})
+        .findOne({})
         .sort({ createdAt: -1 }) // or sort by bill_no
         .lean();
 
     let nextNumber = 1;
-    console.log
     if (lastOrder?.bill) {
         const lastNumber = parseInt(lastOrder.bill.split('-')[1]);
         nextNumber = lastNumber + 1;
@@ -106,7 +105,7 @@ const createOrder = async (req, res, next) => {
         const mobile = data.phoneNumber;
 
         // generate bill number
-        const billNo = await generateBillNo(userId);
+        const billNo = await generateBillNo();
         console.log(billNo)
 
         const orderPayload = {
@@ -115,6 +114,8 @@ const createOrder = async (req, res, next) => {
             // billAmount: data.bill,  // actual total amount
             status: data.status,
             date: new Date(data.date),
+            dueDate: data.dueDate ? new Date(data.dueDate) : null,
+            specialInstructions: data.specialInstructions || '',
             bill: billNo,
             billAmount: data?.items?.reduce((sum, item)=>{
                 return sum+(item.qty*item.amount);
@@ -131,8 +132,12 @@ const createOrder = async (req, res, next) => {
                 name: data.customerName,
                 mobile: data.phoneNumber,
                 address: data.address,
-                kuri: data.kuri
+                kuri: data.kuri,
+                whatsapp: data.whatsappNumber
             });
+        } else if (data.whatsappNumber) {
+            customer.whatsapp = data.whatsappNumber;
+            await customer.save();
         }
 
         // Create order
@@ -172,7 +177,9 @@ const updateOrder = async (req, res, next) => {
 
         const updateData = {}
         if (data?.items) updateData.items = data.items;
-        if (data?.status) updateData.status = data.status
+        if (data?.status) updateData.status = data.status;
+        if (data?.dueDate) updateData.dueDate = new Date(data.dueDate);
+        if (data?.specialInstructions !== undefined) updateData.specialInstructions = data.specialInstructions;
 
         const order = await orders.findOne({ customerId: customer._id, _id: data.orderId })
         if (!order) {
@@ -205,30 +212,83 @@ const updateOrder = async (req, res, next) => {
 
 const getAll = async (req, res, next) => {
     try {
-        const { search, page = 1, limit = 10 } = req.query;
+        const { page = 1, limit = 10, status, customerName, mobile, date, month, year, paymentStatus } = req.query;
         const condition = {}
-        condition.user_id=req.user.id
-        // if (req.query.status !== 'null') {
-        //     condition.status = req.query.status
-        // }
-        // if (req.query.status==='track'){
-        //     condition.status={$in: ['washing', 'ironing', 'packing', 'deliver']}
-        // }
+        condition.user_id = req.user.id
+        
+        if (status === 'track') {
+            // Tracking board: all orders that are actively in the workflow pipeline
+            // (exclude drafts saved as 'confirm' and fully completed 'delivered' orders)
+            condition.status = { $nin: ['confirm', 'delivered'] };
+        } else if (status) {
+            condition.status = status;
+        }
 
-        // if (req.query.status=='all'){
-        //     condition.status={$in: ['washing', 'ironing', 'packing', 'deliver', 'confirm']}
-        // }
+        if (paymentStatus) {
+            condition.paymentStatus = paymentStatus;
+        }
+
+        // Filter by Customer Name or Mobile (retrieving matches from customer collection)
+        if (customerName || mobile) {
+            const customerFilter = { user_id: req.user.id };
+            if (customerName) {
+                customerFilter.name = { $regex: new RegExp(customerName, 'i') };
+            }
+            if (mobile) {
+                customerFilter.mobile = { $regex: new RegExp(mobile, 'i') };
+            }
+            const matchedCustomers = await customers.find(customerFilter).select('_id');
+            const customerIds = matchedCustomers.map(c => c._id);
+            condition.customerId = { $in: customerIds };
+        }
+
+        // Filter by Date
+        if (date) {
+            const start = new Date(date);
+            start.setHours(0, 0, 0, 0);
+
+            const end = new Date(date);
+            end.setHours(23, 59, 59, 999);
+
+            condition.date = { $gte: start, $lte: end };
+        }
+        // Filter by Month-wise
+        else if (month && year) {
+            const numericMonth = parseInt(month);
+            const numericYear = parseInt(year);
+            const start = new Date(numericYear, numericMonth - 1, 1);
+            const end = new Date(numericYear, numericMonth, 0, 23, 59, 59, 999);
+
+            condition.date = { $gte: start, $lte: end };
+        }
         
         console.log(condition)
         const skip = (parseInt(page) - 1) * parseInt(limit);
-        const [items, total] = await Promise.all([orders.find(condition).skip(skip).limit(parseInt(limit)).populate('customerId').sort({ date: 1 }), orders.countDocuments(condition)])
+        
+        const aggregateCondition = { ...condition };
+        if (aggregateCondition.user_id) {
+            aggregateCondition.user_id = new mongoose.Types.ObjectId(req.user.id);
+        }
+        
+        const [items, total, sumResult] = await Promise.all([
+            orders.find(condition).skip(skip).limit(parseInt(limit)).populate('customerId').sort({ date: -1 }), 
+            orders.countDocuments(condition),
+            orders.aggregate([
+                { $match: aggregateCondition },
+                { $group: { _id: null, totalAmount: { $sum: "$billAmount" } } }
+            ])
+        ])
+        
+        const overallTotalAmount = sumResult[0]?.totalAmount || 0;
+        
         return res.status(200).json({
             data: items,
             meta: {
                 total,
                 page: parseInt(page),
                 limit: parseInt(limit),
-                totalPages: Math.ceil(total / parseInt(limit))
+                totalPages: Math.ceil(total / parseInt(limit)),
+                overallTotalAmount
             }
         })
     } catch (err) {
@@ -241,8 +301,9 @@ const getAll = async (req, res, next) => {
 
 const getById = async (req, res, next) => {
     try {
-        const _id = req.query.id
-        const item = await orders.findOne(_id)
+        const _id = req.params.id
+        console.log(248, _id)
+        const item = await orders.findOne({_id:_id}).populate('customerId')
         return res.status(200).json({
             data: item
         })
@@ -418,4 +479,233 @@ const generateInvoice = async (req, res) => {
         return res.status(500).json({ message: err.message });
     }
 }
-module.exports = { createOrder, updateOrder, getAll, getById, deleteOrder, overallsearch, bulkUpdate, generateInvoice }
+
+const getDashboardMetrics = async (req, res, next) => {
+    try {
+        const userId = req.user.id;
+        
+        // Define date range for today
+        const startOfToday = new Date();
+        startOfToday.setHours(0, 0, 0, 0);
+        
+        const endOfToday = new Date();
+        endOfToday.setHours(23, 59, 59, 999);
+
+        // Define date range for this month
+        const startOfMonth = new Date();
+        startOfMonth.setDate(1);
+        startOfMonth.setHours(0, 0, 0, 0);
+
+        // Fetch counts/sums
+        const [
+            todayOrdersCount,
+            activeOrdersCount,
+            monthlyRevenueResult,
+            todayRevenueResult
+        ] = await Promise.all([
+            // 1. Today Orders Count
+            orders.countDocuments({
+                user_id: userId,
+                createdAt: { $gte: startOfToday, $lte: endOfToday }
+            }),
+            // 2. Active Orders Count (not delivered)
+            orders.countDocuments({
+                user_id: userId,
+                status: { $ne: 'delivered' }
+            }),
+            // 3. Monthly Revenue
+            orders.aggregate([
+                {
+                    $match: {
+                        user_id: new mongoose.Types.ObjectId(userId),
+                        createdAt: { $gte: startOfMonth, $lte: endOfToday }
+                    }
+                },
+                {
+                    $group: {
+                        _id: null,
+                        totalRevenue: { $sum: '$billAmount' }
+                    }
+                }
+            ]),
+            // 4. Today Revenue
+            orders.aggregate([
+                {
+                    $match: {
+                        user_id: new mongoose.Types.ObjectId(userId),
+                        createdAt: { $gte: startOfToday, $lte: endOfToday }
+                    }
+                },
+                {
+                    $group: {
+                        _id: null,
+                        totalRevenue: { $sum: '$billAmount' }
+                    }
+                }
+            ])
+        ]);
+
+        const todayRevenue = todayRevenueResult[0]?.totalRevenue || 0;
+        const monthlyRevenue = monthlyRevenueResult[0]?.totalRevenue || 0;
+
+        // Fetch today's expenses
+        const expenseModel = require('../../models/expenseModel');
+        const todayExpensesResult = await expenseModel.aggregate([
+            {
+                $match: {
+                    user_id: new mongoose.Types.ObjectId(userId),
+                    createdAt: { $gte: startOfToday, $lte: endOfToday }
+                }
+            },
+            {
+                $project: {
+                    totalCost: { $multiply: ["$quantity", "$unitprice"] }
+                }
+            },
+            {
+                $group: {
+                    _id: null,
+                    totalExpenses: { $sum: "$totalCost" }
+                }
+            }
+        ]);
+        const todayExpenses = todayExpensesResult[0]?.totalExpenses || 0;
+
+        // Fetch status summaries for all workflows
+        const statusSummary = await orders.aggregate([
+            { $match: { user_id: new mongoose.Types.ObjectId(userId) } },
+            { $group: { _id: "$status", count: { $sum: 1 } } }
+        ]);
+
+        // Transform statusSummary array to key-value counts
+        const statusCounts = {};
+        statusSummary.forEach(s => {
+            if (s._id) {
+                statusCounts[s._id] = s.count;
+            }
+        });
+
+        // Fetch Today's Deliverable Orders
+        const todayDeliveries = await orders.find({
+            user_id: userId,
+            dueDate: { $gte: startOfToday, $lte: endOfToday }
+        }).populate('customerId');
+
+        return res.status(200).json({
+            todayOrdersCount,
+            activeOrdersCount,
+            monthlyRevenue,
+            todayRevenue,
+            todayExpenses,
+            statusCounts,
+            todayDeliveries
+        });
+    } catch (err) {
+        return res.status(500).json({
+            message: "Something went wrong",
+            error: err.message
+        });
+    }
+};
+
+const barcodeUpdate = async (req, res, next) => {
+    try {
+        const { bill, status } = req.body;
+        if (!bill) {
+            return res.status(400).json({ message: "Barcode/Bill number is required" });
+        }
+
+        const order = await orders.findOne({ bill }).populate('customerId');
+        if (!order) {
+            return res.status(404).json({ message: "Order not found with this barcode/bill number" });
+        }
+
+        const Business = require('../../models/businessModel');
+        const business = await Business.findOne({ user_id: order.user_id });
+        let workflows = [];
+        if (business && business.workflowEnabled && business.workflows && business.workflows.length > 0) {
+            workflows = business.workflows;
+        } else {
+            workflows = [
+                { name: "Washing", indentifier: "washing" },
+                { name: "Ironing", indentifier: "ironing" },
+                { name: "Folding", indentifier: "folding" },
+                { name: "Packing", indentifier: "packing" }
+            ];
+        }
+
+        let nextStatus = status;
+        if (!nextStatus || nextStatus === 'next') {
+            const currentIndex = workflows.findIndex(w => w.indentifier === order.status);
+            if (currentIndex === -1) {
+                nextStatus = workflows[0].indentifier;
+            } else if (currentIndex < workflows.length - 1) {
+                nextStatus = workflows[currentIndex + 1].indentifier;
+            } else {
+                nextStatus = 'delivered'; // Finish transition
+            }
+        }
+
+        order.status = nextStatus;
+        order.date = new Date();
+        await order.save();
+
+        return res.status(200).json({
+            message: `Order status updated to ${nextStatus} successfully`,
+            data: order
+        });
+    } catch (err) {
+        return res.status(500).json({
+            message: "Something went wrong",
+            error: err.message
+        });
+    }
+};
+
+const recordPayment = async (req, res) => {
+    try {
+        const { orderId, paymentMethod, paidAmount, discount } = req.body;
+
+        if (!orderId || !paymentMethod || paidAmount == null) {
+            return res.status(400).json({ message: 'orderId, paymentMethod and paidAmount are required' });
+        }
+
+        const orderDoc = await orders.findById(orderId).populate('customerId');
+        if (!orderDoc) {
+            return res.status(404).json({ message: 'Order not found' });
+        }
+
+        const discountAmt = parseFloat(discount) || 0;
+        const paid = parseFloat(paidAmount) || 0;
+        const finalBill = orderDoc.billAmount - discountAmt;
+
+        let paymentStatus = 'unpaid';
+        if (paid >= finalBill) {
+            paymentStatus = 'paid';
+        } else if (paid > 0) {
+            paymentStatus = 'partial';
+        }
+
+        await orders.findByIdAndUpdate(orderId, {
+            $set: {
+                paymentStatus,
+                paymentMethod,
+                paidAmount: paid,
+                discount: discountAmt
+            }
+        });
+
+        const updated = await orders.findById(orderId).populate('customerId');
+        return res.status(200).json({
+            message: 'Payment recorded successfully',
+            data: updated
+        });
+    } catch (err) {
+        return res.status(500).json({
+            message: 'Something went wrong',
+            error: err.message
+        });
+    }
+};
+
+module.exports = { createOrder, updateOrder, getAll, getById, deleteOrder, overallsearch, bulkUpdate, generateInvoice, getDashboardMetrics, barcodeUpdate, recordPayment }
