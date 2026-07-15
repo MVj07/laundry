@@ -3,6 +3,8 @@ const customers = require('../../models/customerModel')
 const { default: mongoose } = require('mongoose');
 const { default: puppeteer } = require('puppeteer');
 const invoiceTemplate = require('../templates/invoiceTemplate');
+const tagTemplate = require('../templates/tagTemplate');
+const thermalInvoiceTemplate = require('../templates/thermalInvoiceTemplate');
 const path = require("path");
 const fs = require("fs");
 const businessModel = require('../../models/businessModel');
@@ -174,9 +176,11 @@ const createOrder = async (req, res, next) => {
             customerId: customer._id
         });
 
+        const populatedOrder = await orders.findById(newOrder._id).populate('customerId');
+
         return res.status(200).json({
             message: "Order created successfully",
-            data: newOrder
+            data: populatedOrder
         });
 
     } catch (err) {
@@ -852,4 +856,78 @@ const updateOrderServiceStatus = async (req, res) => {
     }
 };
 
-module.exports = { createOrder, updateOrder, getAll, getById, deleteOrder, overallsearch, bulkUpdate, generateInvoice, getDashboardMetrics, barcodeUpdate, recordPayment, updateOrderServiceStatus }
+async function generateTagsPuppeteer(order, customer, business, options) {
+    const browser = await puppeteer.launch({ headless: "new" });
+    const page = await browser.newPage();
+
+    const html = tagTemplate.tagHTML(order, customer, business, options);
+    await page.setContent(html, { waitUntil: "networkidle0" });
+
+    const pdfPath = path.join(__dirname, `tags-${order.bill || order._id}.pdf`);
+    await page.pdf({
+        path: pdfPath,
+        format: "A4",
+        printBackground: true
+    });
+
+    await browser.close();
+    return pdfPath;
+}
+
+const generateGarmentTags = async (req, res) => {
+    try {
+        const order = await orders.findById(req.params.id).populate('customerId');
+        if (!order) return res.status(404).json({ message: "Order not found" });
+
+        const customer = order.customerId;
+        const business = await businessModel.find({ user_id: req.user.id });
+        const options = req.body || {};
+
+        const pdfPath = await generateTagsPuppeteer(order, customer, business[0] || {}, options);
+
+        return res.download(pdfPath, `tags-${order.bill || order._id}.pdf`, () => {
+            if (fs.existsSync(pdfPath)) fs.unlinkSync(pdfPath);
+        });
+    } catch (err) {
+        return res.status(500).json({ message: err.message });
+    }
+};
+
+async function generateThermalBillPuppeteer(order, customer, business, options) {
+    const browser = await puppeteer.launch({ headless: "new" });
+    const page = await browser.newPage();
+
+    const html = thermalInvoiceTemplate.thermalInvoiceHTML(order, customer, business, options);
+    await page.setContent(html, { waitUntil: "networkidle0" });
+
+    const pdfPath = path.join(__dirname, `thermal-bill-${order.bill || order._id}.pdf`);
+    await page.pdf({
+        path: pdfPath,
+        format: "A4",
+        printBackground: true
+    });
+
+    await browser.close();
+    return pdfPath;
+}
+
+const generateThermalInvoice = async (req, res) => {
+    try {
+        const order = await orders.findById(req.params.id).populate('customerId');
+        if (!order) return res.status(404).json({ message: "Order not found" });
+
+        const customer = order.customerId;
+        const business = await businessModel.find({ user_id: req.user.id });
+        const options = req.body || {};
+
+        const pdfPath = await generateThermalBillPuppeteer(order, customer, business[0] || {}, options);
+
+        return res.download(pdfPath, `thermal-bill-${order.bill || order._id}.pdf`, () => {
+            if (fs.existsSync(pdfPath)) fs.unlinkSync(pdfPath);
+        });
+    } catch (err) {
+        return res.status(500).json({ message: err.message });
+    }
+};
+
+module.exports = { createOrder, updateOrder, getAll, getById, deleteOrder, overallsearch, bulkUpdate, generateInvoice, getDashboardMetrics, barcodeUpdate, recordPayment, updateOrderServiceStatus, generateGarmentTags, generateThermalInvoice }

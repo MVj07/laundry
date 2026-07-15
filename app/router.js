@@ -7,6 +7,7 @@ const expenseRouting = require('./expense/expenseRouter');
 const settingsRouting = require('./settings/setting_routes');
 const { businessRouting } = require('./business/businessRouter');
 const serviceRouting = require('./service/serviceRouter');
+const subscriptionRouting = require('./subscription/subscriptionRouter');
 
 
 router.get('/', async function(req, res, next){
@@ -21,6 +22,7 @@ const routes=(app)=>{
     settingsRouting(app)
     businessRouting(app)
     serviceRouting(app)
+    subscriptionRouting(app)
 }
 
 module.exports=routes

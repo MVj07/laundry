@@ -6,11 +6,38 @@ const userSchema = new mongoose.Schema({
     password: { type: String, required: true },
     is_profile_completed: { type: Boolean, default: false },
     business_id: { type: mongoose.Schema.Types.ObjectId, ref: "Business" },
-    email: {type: String, required: true, unique: true},
-    username: {type: String, required: true, unique: true}
-    // createdAt: { type: Date },
-    // updatedAt: { type: Date }
-},{timestamps:true})
+    email: { type: String, required: true, unique: true },
+    username: { type: String, required: true, unique: true },
+    // Razorpay Subscription & Trial Management Fields
+    trialStartDate: { type: Date, default: Date.now },
+    trialExpiryDate: { 
+        type: Date, 
+        default: () => new Date(Date.now() + 14 * 24 * 60 * 60 * 1000) // 14-day free trial
+    },
+    subscriptionStatus: { 
+        type: String, 
+        enum: ['trial', 'active', 'ACTIVE', 'expired', 'cancelled', 'payment_failed'], 
+        default: 'trial' 
+    },
+    subscriptionPlan: { 
+        type: String, 
+        enum: ['free_trial', 'monthly_150'], 
+        default: 'free_trial' 
+    },
+    subscriptionStartDate: { type: Date },
+    subscriptionExpiryDate: { type: Date },
+    paymentStatus: { 
+        type: String, 
+        enum: ['unpaid', 'paid', 'PAID', 'failed'], 
+        default: 'unpaid' 
+    },
+    razorpayOrderId: { type: String },
+    razorpayPaymentId: { type: String },
+    razorpaySignature: { type: String },
+    paymentAmount: { type: Number },
+    paymentCurrency: { type: String, default: 'INR' },
+    paymentDate: { type: Date }
+}, { timestamps: true })
 
 userSchema.pre('save', async function (next) {
     if (!this.isModified('password')) return next();

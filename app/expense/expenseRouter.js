@@ -1,5 +1,6 @@
 const express = require('express')
 const authenticateJWT = require('../../services')
+const checkSubscription = require('../middlewares/checkSubscription')
 const { create, getAll,getExpensesByDay,getExpensesByMonth, getExpensesByDate } = require('./expenseController')
 
 const expenseRouting = (app) => {
@@ -9,7 +10,7 @@ const expenseRouting = (app) => {
     router.post('/daywies', getExpensesByDay)
     router.post('/monthwise', getExpensesByMonth)
     router.post('/byDate', getExpensesByDate)
-    app.use('/expense', authenticateJWT, router)
+    app.use('/expense', authenticateJWT, checkSubscription, router)
 }
 
 module.exports = expenseRouting

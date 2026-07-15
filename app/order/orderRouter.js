@@ -1,6 +1,7 @@
 const express = require('express')
-const {createOrder, updateOrder, getAll, getById, deleteOrder, overallsearch, bulkUpdate, generateInvoice, getDashboardMetrics, barcodeUpdate, recordPayment, updateOrderServiceStatus}= require('./orderController')
+const {createOrder, updateOrder, getAll, getById, deleteOrder, overallsearch, bulkUpdate, generateInvoice, getDashboardMetrics, barcodeUpdate, recordPayment, updateOrderServiceStatus, generateGarmentTags, generateThermalInvoice}= require('./orderController')
 const authenticateJWT = require('../../services')
+const checkSubscription = require('../middlewares/checkSubscription')
 
 const orderRouting = (app) => {
     const router = express.Router()
@@ -14,9 +15,11 @@ const orderRouting = (app) => {
     router.post('/search', overallsearch)
     router.put('/bulkUpdate', bulkUpdate)
     router.post('/generate-invoice/:id', generateInvoice)
+    router.post('/generate-tags/:id', generateGarmentTags)
+    router.post('/generate-thermal-invoice/:id', generateThermalInvoice)
     router.post('/record-payment', recordPayment)
     router.put('/:id/service-status', updateOrderServiceStatus)
-    app.use('/order',authenticateJWT, router)
+    app.use('/order', authenticateJWT, checkSubscription, router)
 }
 
 module.exports = orderRouting
