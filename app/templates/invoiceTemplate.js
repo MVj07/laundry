@@ -9,7 +9,9 @@ function invoiceHTML(order, customer, business) {
         </tr>
     `).join("");
 
-    const total = order.items.reduce((a, b) => a + (b.qty * b.amount), 0);
+    const itemsTotal = order.items.reduce((a, b) => a + ((Number(b.qty) || 0) * (Number(b.amount) || 0)), 0);
+    const deliveryCharge = Number(order.deliveryCharge || 0);
+    const total = itemsTotal + deliveryCharge;
     const formattedDate = new Date(order.date).toLocaleDateString('en-IN', { 
         day: '2-digit', 
         month: 'short', 
@@ -309,9 +311,15 @@ function invoiceHTML(order, customer, business) {
                 
                 <div class="total-card">
                     <div class="total-row">
-                        <span style="color: #64748b;">Subtotal</span>
-                        <span style="font-weight: 600; color: #334155;">₹${Number(total).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                        <span style="color: #64748b;">Subtotal (Items)</span>
+                        <span style="font-weight: 600; color: #334155;">₹${Number(itemsTotal).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                     </div>
+                    ${deliveryCharge > 0 || order.deliverytype === 'DD' ? `
+                    <div class="total-row" style="color: #0284c7;">
+                        <span style="font-weight: 500;">Delivery Charge</span>
+                        <span style="font-weight: 600;">+₹${Number(deliveryCharge).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                    ` : ""}
                     <div class="total-row grand-total">
                         <span>Grand Total</span>
                         <span>₹${Number(total).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>

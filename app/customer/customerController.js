@@ -29,7 +29,23 @@ const getAll = async (req, res, next) => {
                         $sum: { $cond: [{ $ne: ["$status", "delivered"] }, 1, 0] }
                     },
                     pendingAmount: {
-                        $sum: { $cond: [{ $ne: ["$status", "delivered"] }, "$billAmount", 0] }
+                        $sum: {
+                            $cond: [
+                                { $eq: ["$paymentStatus", "paid"] },
+                                0,
+                                {
+                                    $max: [
+                                        0,
+                                        {
+                                            $subtract: [
+                                                { $subtract: ["$billAmount", { $ifNull: ["$discount", 0] }] },
+                                                { $ifNull: ["$paidAmount", 0] }
+                                            ]
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
                     }
                 }
             }

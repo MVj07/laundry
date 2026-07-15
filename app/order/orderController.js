@@ -126,18 +126,27 @@ const createOrder = async (req, res, next) => {
             }));
         }
 
+        const initialStatus = data.status || 'confirm';
+        const isTrackingStatus = !['confirm', 'delivered'].includes(initialStatus);
+
+        const dcharge = parseFloat(data.deliveryCharge) || 0;
+        const dtype = data.deliverytype || (dcharge > 0 ? 'DD' : 'CP');
+
         const orderPayload = {
             user_id: userId,
             items: data.items,
             type: data.type || 'item',
-            status: data.status || 'confirm',
+            status: initialStatus,
+            processingStartTime: isTrackingStatus ? new Date() : null,
+            deliverytype: dtype,
+            deliveryCharge: dcharge,
             date: new Date(data.date),
             dueDate: data.dueDate ? new Date(data.dueDate) : null,
             specialInstructions: data.specialInstructions || '',
             bill: billNo,
-            billAmount: data?.items?.reduce((sum, item)=>{
+            billAmount: (data?.items?.reduce((sum, item) => {
                 return sum + (parseFloat(item.qty || 0) * parseFloat(item.amount || 0));
-            }, 0),
+            }, 0) || 0) + dcharge,
             services: selectedServices
         };
 
@@ -202,13 +211,36 @@ const updateOrder = async (req, res, next) => {
         }
 
         const updateData = {}
-        if (data?.items) {
-            updateData.items = data.items;
-            updateData.billAmount = data.items.reduce((sum, item)=>{
-                return sum + (parseFloat(item.qty || 0) * parseFloat(item.amount || 0));
-            }, 0);
+        if (data?.deliverytype) updateData.deliverytype = data.deliverytype;
+        if (data?.deliveryCharge !== undefined) {
+            updateData.deliveryCharge = parseFloat(data.deliveryCharge) || 0;
+            if (updateData.deliveryCharge > 0 && !updateData.deliverytype) updateData.deliverytype = 'DD';
         }
-        if (data?.status) updateData.status = data.status;
+
+        if (data?.items || data?.deliveryCharge !== undefined || data?.deliverytype) {
+            const items = data.items || order.items || [];
+            const dcharge = data?.deliveryCharge !== undefined ? (parseFloat(data.deliveryCharge) || 0) : (parseFloat(order.deliveryCharge) || 0);
+            updateData.billAmount = items.reduce((sum, item) => {
+                return sum + (parseFloat(item.qty || 0) * parseFloat(item.amount || 0));
+            }, 0) + dcharge;
+            if (data?.items) {
+                updateData.items = data.items;
+            }
+        }
+        if (data?.status) {
+            updateData.status = data.status;
+            if (!['confirm', 'delivered'].includes(data.status) && !order.processingStartTime) {
+                updateData.processingStartTime = new Date();
+            }
+            if (data.status === 'order_taken' && !order.orderTakenAt) {
+                updateData.orderTakenAt = data.orderTakenAt ? new Date(data.orderTakenAt) : new Date();
+            }
+            if (data.status === 'delivered') {
+                updateData.deliveredAt = data.deliveredAt ? new Date(data.deliveredAt) : new Date();
+            }
+        }
+        if (data?.orderTakenAt) updateData.orderTakenAt = new Date(data.orderTakenAt);
+        if (data?.deliveredAt) updateData.deliveredAt = new Date(data.deliveredAt);
         if (data?.dueDate) updateData.dueDate = new Date(data.dueDate);
         if (data?.specialInstructions !== undefined) updateData.specialInstructions = data.specialInstructions;
         if (data?.type && (data.type === 'item' || data.type === 'kg')) updateData.type = data.type;
@@ -227,7 +259,8 @@ const updateOrder = async (req, res, next) => {
                 return {
                     serviceId: s._id,
                     name: s.name,
-                    status: existing ? existing.status : 'pending'
+                    status: existing ? existing.status : 'pending',
+                    completedAt: existing ? existing.completedAt : null
                 };
             });
         }
@@ -259,11 +292,13 @@ const getAll = async (req, res, next) => {
         const { page = 1, limit = 10, status, customerName, mobile, date, month, year, paymentStatus } = req.query;
         const condition = {}
         condition.user_id = req.user.id
-        
+
         if (status === 'track') {
             // Tracking board: all orders that are actively in the workflow pipeline
             // (exclude drafts saved as 'confirm' and fully completed 'delivered' orders)
-            condition.status = { $nin: ['confirm', 'delivered'] };
+            condition.status = { $nin: ['confirm', 'delivered', 'deliver', 'order_taken', 'pickup'] };
+        } else if (status === 'deliver') {
+            condition.status = { $in: ['deliver', 'order_taken'] };
         } else if (status) {
             condition.status = status;
         }
@@ -305,26 +340,26 @@ const getAll = async (req, res, next) => {
 
             condition.date = { $gte: start, $lte: end };
         }
-        
+
         console.log(condition)
         const skip = (parseInt(page) - 1) * parseInt(limit);
-        
+
         const aggregateCondition = { ...condition };
         if (aggregateCondition.user_id) {
             aggregateCondition.user_id = new mongoose.Types.ObjectId(req.user.id);
         }
-        
+
         const [items, total, sumResult] = await Promise.all([
-            orders.find(condition).skip(skip).limit(parseInt(limit)).populate('customerId').sort({ date: -1 }), 
+            orders.find(condition).skip(skip).limit(parseInt(limit)).populate('customerId').sort({ date: -1 }),
             orders.countDocuments(condition),
             orders.aggregate([
                 { $match: aggregateCondition },
                 { $group: { _id: null, totalAmount: { $sum: "$billAmount" } } }
             ])
         ])
-        
+
         const overallTotalAmount = sumResult[0]?.totalAmount || 0;
-        
+
         return res.status(200).json({
             data: items,
             meta: {
@@ -347,7 +382,7 @@ const getById = async (req, res, next) => {
     try {
         const _id = req.params.id
         console.log(248, _id)
-        const item = await orders.findOne({_id:_id}).populate('customerId')
+        const item = await orders.findOne({ _id: _id }).populate('customerId')
         return res.status(200).json({
             data: item
         })
@@ -402,7 +437,21 @@ const bulkUpdate = async (req, res) => {
         const { orderIds, status } = req.body
         console.log(orderIds, status)
         const ids = orderIds.map(id => new mongoose.Types.ObjectId(id))
-        const result = await orders.updateMany({ _id: { $in: ids } }, { $set: { status: status } })
+        const updateFields = { status: status };
+        if (status === 'delivered') {
+            updateFields.deliveredAt = new Date();
+        } else if (status === 'order_taken') {
+            updateFields.orderTakenAt = new Date();
+        }
+        const result = await orders.updateMany({ _id: { $in: ids } }, { $set: updateFields })
+
+        if (!['confirm', 'delivered'].includes(status)) {
+            await orders.updateMany(
+                { _id: { $in: ids }, $or: [{ processingStartTime: { $exists: false } }, { processingStartTime: null }] },
+                { $set: { processingStartTime: new Date() } }
+            );
+        }
+
         return res.status(200).json({
             message: "Orders updated successfully",
             matchedCount: result.matchedCount,
@@ -509,15 +558,15 @@ const generateInvoice = async (req, res) => {
         if (!order) return res.status(404).json({ message: "Order not found" });
 
         // const customer = await customers.findOne();
-        const customer=order.customerId
-        const business = await businessModel.find({user_id: req.user.id})
+        const customer = order.customerId
+        const business = await businessModel.find({ user_id: req.user.id })
         console.log(business)
 
         const pdfPath = await generateInvoicePuppeteer(order, customer, business[0]);
 
         return res.download(pdfPath, `invoice-${order.bill}.pdf`, () => {
-                fs.unlinkSync(pdfPath); // auto delete after download
-            });
+            fs.unlinkSync(pdfPath); // auto delete after download
+        });
 
     } catch (err) {
         return res.status(500).json({ message: err.message });
@@ -527,11 +576,11 @@ const generateInvoice = async (req, res) => {
 const getDashboardMetrics = async (req, res, next) => {
     try {
         const userId = req.user.id;
-        
+
         // Define date range for today
         const startOfToday = new Date();
         startOfToday.setHours(0, 0, 0, 0);
-        
+
         const endOfToday = new Date();
         endOfToday.setHours(23, 59, 59, 999);
 
@@ -691,6 +740,9 @@ const barcodeUpdate = async (req, res, next) => {
         }
 
         order.status = nextStatus;
+        if (!['confirm', 'delivered'].includes(nextStatus) && !order.processingStartTime) {
+            order.processingStartTime = new Date();
+        }
         order.date = new Date();
         await order.save();
 
@@ -772,7 +824,18 @@ const updateOrderServiceStatus = async (req, res) => {
         }
 
         order.services[serviceIndex].status = status;
-        
+        order.services[serviceIndex].completedAt = new Date();
+
+        // Check if all services are completed
+        const allCompleted = order.services.every(s => s.status === 'completed');
+        if (allCompleted) {
+            if (order.deliverytype === 'DD') {
+                order.status = 'deliver';
+            } else {
+                order.status = 'pickup';
+            }
+        }
+
         await order.save();
 
         const updatedOrder = await orders.findById(id).populate('customerId');
