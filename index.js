@@ -9,8 +9,8 @@ const routes = require('./app/router');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-// const MONGO_URI = 'mongodb+srv://msvijay6661:Timemachine7@laundry.yo8k1gx.mongodb.net/Laundry'
-const MONGO_URI = 'mongodb://msvijay6661:Timemachine7@ac-5qixhnh-shard-00-00.yo8k1gx.mongodb.net:27017,ac-5qixhnh-shard-00-01.yo8k1gx.mongodb.net:27017,ac-5qixhnh-shard-00-02.yo8k1gx.mongodb.net:27017/Laundry?authSource=admin&replicaSet=atlas-y6lmew-shard-0&ssl=true'
+const MONGO_URI = 'mongodb+srv://msvijay6661:Timemachine7@laundry.yo8k1gx.mongodb.net/Laundry'
+// const MONGO_URI = 'mongodb://msvijay6661:Timemachine7@ac-5qixhnh-shard-00-00.yo8k1gx.mongodb.net:27017,ac-5qixhnh-shard-00-01.yo8k1gx.mongodb.net:27017,ac-5qixhnh-shard-00-02.yo8k1gx.mongodb.net:27017/Laundry?authSource=admin&replicaSet=atlas-y6lmew-shard-0&ssl=true'
 // Middleware
 app.use(cors());
 app.use(bodyParser.json());
