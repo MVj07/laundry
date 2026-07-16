@@ -1,11 +1,15 @@
 const express = require('express')
-const { Login, createUser,change_pass } = require('./userController')
+const { Login, createUser, change_pass, createEmployee, getEmployees, deleteEmployee } = require('./userController')
+const authenticateJWT = require('../../services')
 
 const userRouting = (app) => {
     const router = express.Router()
     router.post('/login', Login)
     router.post('/create', createUser)
     router.post('/change_pass', change_pass)
+    router.post('/create-employee', authenticateJWT, createEmployee)
+    router.get('/employees', authenticateJWT, getEmployees)
+    router.delete('/employee/:id', authenticateJWT, deleteEmployee)
 
     app.use(router)
 }

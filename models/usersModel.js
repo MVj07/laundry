@@ -2,7 +2,9 @@ const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs')
 const userSchema = new mongoose.Schema({
     name: { type: String, required: true },
-    // type: { type: String, required: true },
+    type: { type: String, default: 'admin' },
+    role: { type: String, enum: ['admin', 'employee'], default: 'admin' },
+    admin_id: { type: mongoose.Schema.Types.ObjectId, ref: 'users' },
     password: { type: String, required: true },
     is_profile_completed: { type: Boolean, default: false },
     business_id: { type: mongoose.Schema.Types.ObjectId, ref: "Business" },

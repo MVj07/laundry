@@ -400,6 +400,11 @@ const getById = async (req, res, next) => {
 
 const deleteOrder = async (req, res, next) => {
     try {
+        if (req.user && req.user.role === 'employee') {
+            return res.status(403).json({
+                message: 'Employees are not authorized to delete orders.'
+            });
+        }
         const _id = req.query.id
         const item = await orders.findOne(_id)
         if (!item) {

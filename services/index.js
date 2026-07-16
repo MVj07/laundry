@@ -10,6 +10,13 @@ const authenticateJWT = (req, res, next) => {
     try {
       const decoded = jwt.verify(token, jwtSecret);
       req.user = decoded;
+      req.user.userId = decoded.id;
+      req.user.role = decoded.role || decoded.type || 'admin';
+      if (req.user.role === 'employee' && decoded.admin_id) {
+        req.user.id = decoded.admin_id;
+      } else {
+        req.user.id = decoded.id;
+      }
       next();
     } catch (err) {
       return res.status(403).json({ message: 'Invalid token' });
