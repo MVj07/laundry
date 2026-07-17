@@ -8,6 +8,20 @@ const thermalInvoiceTemplate = require('../templates/thermalInvoiceTemplate');
 const path = require("path");
 const fs = require("fs");
 const businessModel = require('../../models/businessModel');
+const Razorpay = require('razorpay');
+const crypto = require('crypto');
+const { decryptSecret } = require('../user/userController');
+
+const getRazorpayInstance = (customKeyId, customKeySecret) => {
+    let secret = customKeySecret || process.env.RAZORPAY_KEY_SECRET || 'placeholder_secret';
+    if (secret && typeof secret === 'string' && secret.startsWith('enc:')) {
+        secret = decryptSecret(secret) || secret;
+    }
+    return new Razorpay({
+        key_id: customKeyId || process.env.RAZORPAY_KEY_ID || 'rzp_test_placeholder_key',
+        key_secret: secret
+    });
+};
 
 // const generateBillNo = async () => {
 //     const count = await orders.countDocuments(); // total orders
@@ -813,6 +827,582 @@ const recordPayment = async (req, res) => {
     }
 };
 
+const createPaymentLink = async (req, res) => {
+    try {
+        const orderId = req.body.orderId || req.body.id || req.params.id;
+        if (!orderId) {
+            return res.status(400).json({ status: false, message: 'orderId is required' });
+        }
+
+        const orderDoc = await orders.findById(orderId).populate('customerId');
+        if (!orderDoc) {
+            return res.status(404).json({ status: false, message: 'Order not found' });
+        }
+
+        const orderUserId = orderDoc.user_id || req.user?.id;
+        let adminUser = null;
+        let businessDoc = null;
+        if (orderUserId) {
+            const orderUserDoc = await require('../../models/usersModel').findById(orderUserId);
+            const adminId = orderUserDoc?.role === 'employee' ? (orderUserDoc.admin_id || orderUserId) : orderUserId;
+            adminUser = await require('../../models/usersModel').findById(adminId);
+            businessDoc = await businessModel.findOne({ user_id: adminId });
+        }
+
+        const discountAmt = parseFloat(orderDoc.discount) || 0;
+        const paid = parseFloat(orderDoc.paidAmount) || 0;
+        const finalAmount = Math.max(0, orderDoc.billAmount - discountAmt);
+        const balanceDue = Math.max(0, finalAmount - paid);
+
+        if (balanceDue <= 0 || orderDoc.paymentStatus === 'paid') {
+            return res.status(200).json({
+                status: true,
+                message: 'Order is already fully paid',
+                data: {
+                    paymentLinkId: orderDoc.razorpayPaymentLinkId || 'paid',
+                    short_url: orderDoc.razorpayPaymentLinkUrl || '',
+                    status: 'paid',
+                    order: orderDoc
+                }
+            });
+        }
+
+        const amountInPaise = Math.round(balanceDue * 100);
+        const customerName = orderDoc.customerId?.name || 'Customer';
+        const customerEmail = orderDoc.customerId?.email || 'customer@laundry.local';
+        const customerPhone = orderDoc.customerId?.mobile || orderDoc.customerId?.phone || '9999999999';
+
+        const keyId = businessDoc?.razorpay_key_id || adminUser?.razorpay_key_id;
+        const keySecret = businessDoc?.razorpay_key_secret || adminUser?.razorpay_key_secret;
+
+        if (!keyId || !keySecret || keyId.includes('placeholder') || keyId === 'rzp_test_placeholder_key') {
+            return res.status(400).json({
+                status: false,
+                requiresRazorpayKeys: true,
+                message: "Please add your store's Razorpay API Key ID and Key Secret in Application Settings before generating online payment requests and links."
+            });
+        }
+
+        const isPlaceholderKey = false;
+
+        let paymentLinkId = null;
+        let shortUrl = null;
+        let linkStatus = 'created';
+        let mockMode = false;
+
+        try {
+            const razorpay = getRazorpayInstance(keyId, keySecret);
+            const linkPayload = {
+                amount: amountInPaise,
+                currency: 'INR',
+                accept_partial: false,
+                description: `Payment for Laundry Bill #${orderDoc.bill || orderDoc._id}`,
+                customer: {
+                    name: customerName,
+                    email: customerEmail,
+                    contact: customerPhone
+                },
+                notify: {
+                    sms: false,
+                    email: false
+                },
+                reminder_enable: true,
+                notes: {
+                    orderId: orderDoc._id.toString(),
+                    bill: orderDoc.bill || ''
+                }
+            };
+
+            const createdLink = await razorpay.paymentLink.create(linkPayload);
+            paymentLinkId = createdLink.id;
+            shortUrl = createdLink.short_url;
+            linkStatus = createdLink.status;
+        } catch (rzpErr) {
+            console.error('Razorpay paymentLink.create failed:', rzpErr);
+            const errMsg = rzpErr.error?.description || rzpErr.message || 'Razorpay API rejected the request with your configured API keys.';
+            return res.status(400).json({
+                status: false,
+                message: `Razorpay Error: ${errMsg}. Please verify your Key ID and Key Secret in Application Settings.`
+            });
+        }
+
+        orderDoc.razorpayPaymentLinkId = paymentLinkId;
+        orderDoc.razorpayPaymentLinkUrl = shortUrl;
+        orderDoc.razorpayPaymentLinkStatus = linkStatus;
+        await orderDoc.save();
+
+        return res.status(200).json({
+            status: true,
+            message: mockMode ? 'Payment Link generated successfully (Demo/Sandbox Mode)' : 'Payment Link created via Razorpay',
+            data: {
+                paymentLinkId,
+                short_url: shortUrl,
+                status: linkStatus,
+                mockMode,
+                order: orderDoc
+            }
+        });
+    } catch (err) {
+        console.error('Error creating payment link:', err);
+        return res.status(500).json({
+            status: false,
+            message: 'Error creating payment link: ' + (err.message || err)
+        });
+    }
+};
+
+const checkPaymentLinkStatus = async (req, res) => {
+    try {
+        const orderId = req.params.id || req.body.orderId || req.body.id;
+        if (!orderId) {
+            return res.status(400).json({ status: false, message: 'orderId is required' });
+        }
+
+        const orderDoc = await orders.findById(orderId).populate('customerId');
+        if (!orderDoc) {
+            return res.status(404).json({ status: false, message: 'Order not found' });
+        }
+
+        if (orderDoc.paymentStatus === 'paid') {
+            return res.status(200).json({
+                status: true,
+                paid: true,
+                message: 'Order is paid',
+                data: orderDoc
+            });
+        }
+
+        const plinkId = orderDoc.razorpayPaymentLinkId;
+        if (!plinkId) {
+            return res.status(200).json({
+                status: true,
+                paid: false,
+                message: 'No payment link generated for this order yet',
+                data: orderDoc
+            });
+        }
+
+        if (plinkId.startsWith('plink_mock_')) {
+            const isPaid = orderDoc.razorpayPaymentLinkStatus === 'paid' || orderDoc.paymentStatus === 'paid';
+            return res.status(200).json({
+                status: true,
+                paid: isPaid,
+                message: isPaid ? 'Order paid via demo link' : 'Pending demo payment',
+                data: orderDoc
+            });
+        }
+
+        try {
+            const orderUserId = orderDoc.user_id;
+            let keyId = process.env.RAZORPAY_KEY_ID;
+            let keySecret = process.env.RAZORPAY_KEY_SECRET;
+            if (orderUserId) {
+                const orderUserDoc = await require('../../models/usersModel').findById(orderUserId);
+                const adminId = orderUserDoc?.role === 'employee' ? (orderUserDoc.admin_id || orderUserId) : orderUserId;
+                const adminUser = await require('../../models/usersModel').findById(adminId);
+                const businessDoc = await businessModel.findOne({ user_id: adminId });
+                if (businessDoc?.razorpay_key_id || adminUser?.razorpay_key_id) {
+                    keyId = businessDoc?.razorpay_key_id || adminUser?.razorpay_key_id;
+                    keySecret = businessDoc?.razorpay_key_secret || adminUser?.razorpay_key_secret;
+                }
+            }
+            const razorpay = getRazorpayInstance(keyId, keySecret);
+            const rzpLink = await razorpay.paymentLink.fetch(plinkId);
+            if (rzpLink.status === 'paid' && orderDoc.paymentStatus !== 'paid') {
+                const discountAmt = parseFloat(orderDoc.discount) || 0;
+                const finalAmount = Math.max(0, orderDoc.billAmount - discountAmt);
+
+                orderDoc.paymentStatus = 'paid';
+                orderDoc.paidAmount = finalAmount;
+                orderDoc.paymentMethod = 'payment_link';
+                orderDoc.razorpayPaymentLinkStatus = 'paid';
+                await orderDoc.save();
+
+                return res.status(200).json({
+                    status: true,
+                    paid: true,
+                    message: 'Payment verified and order marked as paid!',
+                    data: orderDoc
+                });
+            }
+
+            return res.status(200).json({
+                status: true,
+                paid: rzpLink.status === 'paid',
+                linkStatus: rzpLink.status,
+                data: orderDoc
+            });
+        } catch (fetchErr) {
+            console.error('Error fetching Razorpay link status:', fetchErr);
+            return res.status(200).json({
+                status: true,
+                paid: false,
+                message: 'Unable to check live Razorpay link right now',
+                data: orderDoc
+            });
+        }
+    } catch (err) {
+        console.error('Error in checkPaymentLinkStatus:', err);
+        return res.status(500).json({ status: false, message: err.message || 'Server error' });
+    }
+};
+
+const simulateLinkPayment = async (req, res) => {
+    try {
+        const orderId = req.params.id || req.body.orderId || req.body.id;
+        if (!orderId) {
+            return res.status(400).json({ status: false, message: 'orderId is required' });
+        }
+
+        const orderDoc = await orders.findById(orderId).populate('customerId');
+        if (!orderDoc) {
+            return res.status(404).json({ status: false, message: 'Order not found' });
+        }
+
+        const discountAmt = parseFloat(orderDoc.discount) || 0;
+        const finalAmount = Math.max(0, orderDoc.billAmount - discountAmt);
+
+        orderDoc.paymentStatus = 'paid';
+        orderDoc.paidAmount = finalAmount;
+        orderDoc.paymentMethod = 'payment_link';
+        orderDoc.razorpayPaymentLinkStatus = 'paid';
+        await orderDoc.save();
+
+        return res.status(200).json({
+            status: true,
+            message: 'Payment simulated successfully. Order is now PAID!',
+            data: orderDoc
+        });
+    } catch (err) {
+        console.error('Error simulating payment:', err);
+        return res.status(500).json({ status: false, message: err.message || 'Server error' });
+    }
+};
+
+const razorpayWebhook = async (req, res) => {
+    try {
+        const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
+        const signature = req.headers['x-razorpay-signature'];
+
+        if (webhookSecret && webhookSecret !== 'your_webhook_secret_here' && signature) {
+            const expectedSignature = crypto.createHmac('sha256', webhookSecret)
+                .update(JSON.stringify(req.body))
+                .digest('hex');
+            if (expectedSignature !== signature) {
+                console.warn('Invalid Razorpay Webhook Signature received');
+                return res.status(400).json({ status: false, message: 'Invalid signature' });
+            }
+        }
+
+        const event = req.body?.event;
+        const payload = req.body?.payload;
+
+        if (event === 'payment_link.paid' || event === 'payment_link.updated') {
+            const plink = payload?.payment_link?.entity;
+            if (plink && plink.status === 'paid') {
+                const plinkId = plink.id;
+                const notesOrderId = plink.notes?.orderId;
+
+                let orderDoc = null;
+                if (notesOrderId) {
+                    orderDoc = await orders.findById(notesOrderId).populate('customerId');
+                }
+                if (!orderDoc && plinkId) {
+                    orderDoc = await orders.findOne({ razorpayPaymentLinkId: plinkId }).populate('customerId');
+                }
+
+                if (orderDoc && orderDoc.paymentStatus !== 'paid') {
+                    const discountAmt = parseFloat(orderDoc.discount) || 0;
+                    const finalAmount = Math.max(0, orderDoc.billAmount - discountAmt);
+
+                    orderDoc.paymentStatus = 'paid';
+                    orderDoc.paidAmount = finalAmount;
+                    orderDoc.paymentMethod = 'payment_link';
+                    orderDoc.razorpayPaymentLinkStatus = 'paid';
+                    await orderDoc.save();
+                    console.log(`Webhook processed: Order #${orderDoc.bill || orderDoc._id} automatically marked as PAID via payment_link.paid event.`);
+                }
+            }
+        } else if (event === 'order.paid' || event === 'payment.authorized' || event === 'payment.captured') {
+            const entity = payload?.payment?.entity || payload?.order?.entity;
+            const notesOrderId = entity?.notes?.orderId;
+            if (notesOrderId) {
+                const orderDoc = await orders.findById(notesOrderId).populate('customerId');
+                if (orderDoc && orderDoc.paymentStatus !== 'paid') {
+                    const discountAmt = parseFloat(orderDoc.discount) || 0;
+                    const finalAmount = Math.max(0, orderDoc.billAmount - discountAmt);
+
+                    orderDoc.paymentStatus = 'paid';
+                    orderDoc.paidAmount = finalAmount;
+                    orderDoc.paymentMethod = 'payment_link';
+                    orderDoc.razorpayPaymentLinkStatus = 'paid';
+                    await orderDoc.save();
+                    console.log(`Webhook processed: Order #${orderDoc.bill || orderDoc._id} automatically marked as PAID via ${event}.`);
+                }
+            }
+        }
+
+        return res.status(200).json({ status: true });
+    } catch (err) {
+        console.error('Error handling Razorpay webhook:', err);
+        return res.status(500).json({ status: false, message: 'Webhook handler error' });
+    }
+};
+
+const renderCustomerPaymentPage = async (req, res) => {
+    try {
+        const orderId = req.params.id;
+        const orderDoc = await orders.findById(orderId).populate('customerId');
+        if (!orderDoc) {
+            return res.status(404).send('<h1 style="color:white;text-align:center;font-family:sans-serif;margin-top:20%">Order not found</h1>');
+        }
+
+        const customer = orderDoc.customerId || {};
+        const discountAmt = parseFloat(orderDoc.discount) || 0;
+        const finalAmount = Math.max(0, orderDoc.billAmount - discountAmt);
+        const isPaid = orderDoc.paymentStatus === 'paid';
+
+        const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Express Laundry - Payment Checkout #${orderDoc.bill || orderId}</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Outfit', sans-serif; }
+        body {
+            background: radial-gradient(circle at top right, #311042, #09090b);
+            color: #f4f4f5;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .checkout-card {
+            background: rgba(24, 24, 27, 0.85);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 24px;
+            width: 100%;
+            max-width: 480px;
+            padding: 32px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6);
+            position: relative;
+            overflow: hidden;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 24px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            padding-bottom: 20px;
+        }
+        .brand-badge {
+            background: linear-gradient(135deg, #a855f7, #6366f1);
+            color: white;
+            font-size: 12px;
+            font-weight: 700;
+            padding: 6px 14px;
+            border-radius: 100px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            display: inline-block;
+            margin-bottom: 12px;
+            box-shadow: 0 4px 15px rgba(168, 85, 247, 0.3);
+        }
+        .header h1 { font-size: 26px; font-weight: 700; color: #fff; margin-bottom: 4px; }
+        .header p { color: #a1a1aa; font-size: 14px; }
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            font-size: 15px;
+        }
+        .info-label { color: #a1a1aa; font-weight: 500; }
+        .info-value { font-weight: 600; color: #e4e4e7; }
+        .total-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 20px 0;
+            padding: 16px;
+            background: rgba(168, 85, 247, 0.1);
+            border: 1px solid rgba(168, 85, 247, 0.2);
+            border-radius: 16px;
+        }
+        .total-row .label { font-size: 16px; font-weight: 600; color: #c084fc; }
+        .total-row .amount { font-size: 28px; font-weight: 700; color: #fff; }
+        .pay-btn {
+            width: 100%;
+            padding: 16px;
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: white;
+            border: none;
+            border-radius: 16px;
+            font-size: 18px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 10px 25px rgba(16, 185, 129, 0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+        .pay-btn:hover { transform: translateY(-2px); box-shadow: 0 15px 30px rgba(16, 185, 129, 0.4); }
+        .pay-btn:disabled { background: #3f3f46; cursor: not-allowed; box-shadow: none; transform: none; }
+        .paid-banner {
+            background: linear-gradient(135deg, #10b981, #047857);
+            color: white;
+            text-align: center;
+            padding: 20px;
+            border-radius: 16px;
+            font-size: 20px;
+            font-weight: 700;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            box-shadow: 0 10px 25px rgba(16, 185, 129, 0.3);
+        }
+        .methods {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .method-item {
+            flex: 1;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 12px;
+            border-radius: 12px;
+            text-align: center;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .method-item.active {
+            border-color: #a855f7;
+            background: rgba(168, 85, 247, 0.15);
+            color: #fff;
+        }
+        .footer-note {
+            text-align: center;
+            font-size: 12px;
+            color: #71717a;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="checkout-card">
+        <div class="header">
+            <span class="brand-badge">✨ Express Laundry Service</span>
+            <h1>Bill Payment Request</h1>
+            <p>Invoice #${orderDoc.bill || orderId}</p>
+        </div>
+
+        <div class="info-row">
+            <span class="info-label">Customer Name</span>
+            <span class="info-value">${customer.name || 'Valued Customer'}</span>
+        </div>
+        <div class="info-row">
+            <span class="info-label">Contact Number</span>
+            <span class="info-value">${customer.mobile || customer.phone || 'N/A'}</span>
+        </div>
+        <div class="info-row">
+            <span class="info-label">Order Type / Items</span>
+            <span class="info-value">${orderDoc.items?.length || 1} Item(s) (${orderDoc.type || 'item'})</span>
+        </div>
+        <div class="info-row">
+            <span class="info-label">Current Status</span>
+            <span class="info-value" style="color: #60a5fa; text-transform: capitalize;">${orderDoc.status || 'Processing'}</span>
+        </div>
+
+        <div class="total-row">
+            <span class="label">Balance Amount Due</span>
+            <span class="amount">₹${finalAmount.toFixed(2)}</span>
+        </div>
+
+        <div id="payment-section">
+            ${isPaid ? `
+                <div class="paid-banner">
+                    <span style="font-size:36px">🎉</span>
+                    <span>Order Paid in Full!</span>
+                    <span style="font-size:13px; font-weight:500; opacity:0.9">Thank you for choosing Express Laundry</span>
+                </div>
+            ` : `
+                <div style="font-size:13px; color:#a1a1aa; margin-bottom:10px; font-weight:600">Select Payment Method:</div>
+                <div class="methods">
+                    <div class="method-item active" onclick="selectMethod(this, 'UPI')">⚡ UPI (GPay/PhonePe)</div>
+                    <div class="method-item" onclick="selectMethod(this, 'Card')">💳 Debit/Credit Card</div>
+                    <div class="method-item" onclick="selectMethod(this, 'NetBanking')">🏦 NetBanking</div>
+                </div>
+                <button class="pay-btn" id="pay-button" onclick="payNow()">
+                    <span>🔒 Pay ₹${finalAmount.toFixed(2)} Securely</span>
+                </button>
+            `}
+        </div>
+
+        <div class="footer-note">
+            🛡️ 256-bit Encrypted Payment • Powered by Razorpay Secure Gateway
+        </div>
+    </div>
+
+    <script>
+        let selectedMethod = 'UPI';
+        function selectMethod(el, method) {
+            document.querySelectorAll('.method-item').forEach(i => i.classList.remove('active'));
+            el.classList.add('active');
+            selectedMethod = method;
+        }
+
+        async function payNow() {
+            const btn = document.getElementById('pay-button');
+            btn.disabled = true;
+            btn.innerHTML = '<span>⏳ Processing Payment via ' + selectedMethod + '...</span>';
+
+            try {
+                const res = await fetch('/order/simulate-link-payment', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ orderId: '${orderId}' })
+                });
+                const data = await res.json();
+                if (data.status) {
+                    document.getElementById('payment-section').innerHTML = \`
+                        <div class="paid-banner">
+                            <span style="font-size:36px">🎉</span>
+                            <span>Payment Successful!</span>
+                            <span style="font-size:13px; font-weight:500; opacity:0.9">Your order has been updated automatically to PAID.</span>
+                        </div>
+                    \`;
+                } else {
+                    alert('Payment processing error: ' + (data.message || 'Unknown error'));
+                    btn.disabled = false;
+                    btn.innerHTML = '<span>🔒 Pay ₹${finalAmount.toFixed(2)} Securely</span>';
+                }
+            } catch (err) {
+                alert('Connection error while submitting payment.');
+                btn.disabled = false;
+                btn.innerHTML = '<span>🔒 Pay ₹${finalAmount.toFixed(2)} Securely</span>';
+            }
+        }
+    </script>
+</body>
+</html>`;
+        return res.send(html);
+    } catch (err) {
+        console.error('Error rendering customer payment page:', err);
+        return res.status(500).send('Server Error');
+    }
+};
+
+
 const updateOrderServiceStatus = async (req, res) => {
     try {
         const { id } = req.params;
@@ -935,4 +1525,4 @@ const generateThermalInvoice = async (req, res) => {
     }
 };
 
-module.exports = { createOrder, updateOrder, getAll, getById, deleteOrder, overallsearch, bulkUpdate, generateInvoice, getDashboardMetrics, barcodeUpdate, recordPayment, updateOrderServiceStatus, generateGarmentTags, generateThermalInvoice }
+module.exports = { createOrder, updateOrder, getAll, getById, deleteOrder, overallsearch, bulkUpdate, generateInvoice, getDashboardMetrics, barcodeUpdate, recordPayment, createPaymentLink, checkPaymentLinkStatus, simulateLinkPayment, razorpayWebhook, renderCustomerPaymentPage, updateOrderServiceStatus, generateGarmentTags, generateThermalInvoice }

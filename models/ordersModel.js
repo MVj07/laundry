@@ -12,9 +12,12 @@ const orderSchema = new mongoose.Schema({
     specialInstructions: { type: String },
     // 💳 Payment fields
     paymentStatus: { type: String, enum: ['unpaid', 'partial', 'paid'], default: 'unpaid' },
-    paymentMethod: { type: String, enum: ['cash', 'upi', 'card', 'cheque'], default: null },
+    paymentMethod: { type: String, enum: ['cash', 'upi', 'card', 'cheque', 'payment_link', 'razorpay_link'], default: null },
     paidAmount: { type: Number, default: 0 },
     discount: { type: Number, default: 0 },
+    razorpayPaymentLinkId: { type: String, default: null },
+    razorpayPaymentLinkUrl: { type: String, default: null },
+    razorpayPaymentLinkStatus: { type: String, default: null },
     // 🧺 Services tracking fields
     services: [
         {

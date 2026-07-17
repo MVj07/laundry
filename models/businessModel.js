@@ -10,6 +10,8 @@ const businessSchema = new mongoose.Schema({
   address: String,
   gst_no: String,
   logo_url: String,
+  razorpay_key_id: { type: String, default: null },
+  razorpay_key_secret: { type: String, default: null },
   workflowEnabled: { type: Boolean, default: false },
   workflows: []
   

@@ -1,5 +1,5 @@
 const express = require('express')
-const {createOrder, updateOrder, getAll, getById, deleteOrder, overallsearch, bulkUpdate, generateInvoice, getDashboardMetrics, barcodeUpdate, recordPayment, updateOrderServiceStatus, generateGarmentTags, generateThermalInvoice}= require('./orderController')
+const {createOrder, updateOrder, getAll, getById, deleteOrder, overallsearch, bulkUpdate, generateInvoice, getDashboardMetrics, barcodeUpdate, recordPayment, createPaymentLink, checkPaymentLinkStatus, simulateLinkPayment, razorpayWebhook, renderCustomerPaymentPage, updateOrderServiceStatus, generateGarmentTags, generateThermalInvoice}= require('./orderController')
 const authenticateJWT = require('../../services')
 const checkSubscription = require('../middlewares/checkSubscription')
 
@@ -18,8 +18,22 @@ const orderRouting = (app) => {
     router.post('/generate-tags/:id', generateGarmentTags)
     router.post('/generate-thermal-invoice/:id', generateThermalInvoice)
     router.post('/record-payment', recordPayment)
+    router.post('/create-payment-link', createPaymentLink)
+    router.get('/check-payment-link/:id', checkPaymentLinkStatus)
+    router.post('/simulate-link-payment', simulateLinkPayment)
     router.put('/:id/service-status', updateOrderServiceStatus)
+
+    // Public / External webhooks and customer payment simulation pages (NO JWT auth needed)
+    app.get('/order/pay/:id', renderCustomerPaymentPage)
+    app.get('/pay/:id', renderCustomerPaymentPage)
+    app.post('/order/simulate-link-payment', simulateLinkPayment)
+    app.post('/order/razorpay-webhook', razorpayWebhook)
+    app.post('/webhook/razorpay', razorpayWebhook)
+
+    // Top-level direct alias for POS terminal POST /create-payment-link
+    app.post('/create-payment-link', authenticateJWT, checkSubscription, createPaymentLink)
+
     app.use('/order', authenticateJWT, checkSubscription, router)
 }
 
-module.exports = orderRouting
+module.exports = orderRouting

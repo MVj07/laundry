@@ -10,6 +10,10 @@ const userSchema = new mongoose.Schema({
     business_id: { type: mongoose.Schema.Types.ObjectId, ref: "Business" },
     email: { type: String, required: true, unique: true },
     username: { type: String, required: true, unique: true },
+    razorpay_key_id: { type: String, default: null },
+    razorpay_key_secret: { type: String, default: null },
+    razorpayUpdateOtp: { type: String, default: null },
+    razorpayUpdateOtpExpiry: { type: Date, default: null },
     // Razorpay Subscription & Trial Management Fields
     trialStartDate: { type: Date, default: Date.now },
     trialExpiryDate: { 
@@ -23,7 +27,7 @@ const userSchema = new mongoose.Schema({
     },
     subscriptionPlan: { 
         type: String, 
-        enum: ['free_trial', 'monthly_150'], 
+        enum: ['free_trial', 'monthly_200', '200', 'monthly_150', 'monthly_300', '150', '300', 'trial'], 
         default: 'free_trial' 
     },
     subscriptionStartDate: { type: Date },

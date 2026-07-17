@@ -31,7 +31,8 @@ const getStatus = async (req, res) => {
     let expiryDate = null;
 
     if (isSubActive) {
-      currentPlan = 'Monthly Plan (₹150)';
+      const is200 = String(user.subscriptionPlan).includes('200') || Number(user.paymentAmount) === 200;
+      currentPlan = is200 ? 'Monthly Pro Plan (₹200)' : (String(user.subscriptionPlan).includes('300') ? 'Monthly Plan (₹300)' : 'Monthly Plan (₹150)');
       const diff = new Date(user.subscriptionExpiryDate).getTime() - now.getTime();
       daysRemaining = Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
       expiryDate = user.subscriptionExpiryDate;
@@ -69,7 +70,7 @@ const getStatus = async (req, res) => {
 };
 
 /**
- * Create Razorpay Order for ₹150 Monthly Plan
+ * Create Razorpay Order for ₹200 Monthly Plan
  * POST /api/subscription/create-order
  */
 const createOrder = async (req, res) => {
@@ -80,7 +81,10 @@ const createOrder = async (req, res) => {
       return res.status(404).json({ status: false, message: 'User not found' });
     }
 
-    const amountInPaise = 150 * 100; // ₹150 in paise
+    const requestedPlan = req.body.plan || req.body.planId || req.body.amount || 'monthly_200';
+    const amountInRs = 200;
+    const planName = 'monthly_200';
+    const amountInPaise = amountInRs * 100;
     const currency = 'INR';
 
     // If API keys are missing or set to placeholders in .env, use Sandbox Mock Mode so testing works smoothly
@@ -90,8 +94,9 @@ const createOrder = async (req, res) => {
       console.log('Sandbox Mock Mode: RAZORPAY_KEY_ID missing/placeholder in .env. Generating mock order for testing...');
       const mockOrderId = `order_mock_${Date.now()}`;
       user.razorpayOrderId = mockOrderId;
-      user.paymentAmount = 150;
+      user.paymentAmount = amountInRs;
       user.paymentCurrency = currency;
+      user.subscriptionPlan = planName;
       await user.save();
 
       return res.json({
@@ -99,6 +104,7 @@ const createOrder = async (req, res) => {
         orderId: mockOrderId,
         amount: amountInPaise,
         currency,
+        plan: planName,
         keyId: 'rzp_test_mock_key',
         mockMode: true,
         message: 'Sandbox Mock Order generated (Add RAZORPAY_KEY_ID to .env for real Razorpay Checkout)'
@@ -112,15 +118,17 @@ const createOrder = async (req, res) => {
       receipt: `sub_${Date.now()}`,
       notes: {
         userId: user._id.toString(),
-        username: user.username
+        username: user.username,
+        plan: planName
       }
     };
 
     const order = await razorpay.orders.create(orderOptions);
 
     user.razorpayOrderId = order.id;
-    user.paymentAmount = 150;
+    user.paymentAmount = amountInRs;
     user.paymentCurrency = currency;
+    user.subscriptionPlan = planName;
     await user.save();
 
     return res.json({
@@ -128,6 +136,7 @@ const createOrder = async (req, res) => {
       orderId: order.id,
       amount: order.amount,
       currency: order.currency,
+      plan: planName,
       keyId: process.env.RAZORPAY_KEY_ID
     });
   } catch (err) {
@@ -183,15 +192,19 @@ const verifyPayment = async (req, res) => {
 
     const newExpiry = new Date(baseDate.getTime() + 30 * 24 * 60 * 60 * 1000); // +30 days
 
+    const requestedPlan = req.body.plan || req.body.planId || req.body.amount || user.subscriptionPlan || 'monthly_200';
+    const amountInRs = 200;
+    const planName = 'monthly_200';
+
     user.subscriptionStatus = 'ACTIVE';
-    user.subscriptionPlan = 'monthly_150';
+    user.subscriptionPlan = planName;
     user.subscriptionStartDate = user.subscriptionStartDate || now;
     user.subscriptionExpiryDate = newExpiry;
     user.paymentStatus = 'PAID';
     user.razorpayOrderId = razorpay_order_id;
     user.razorpayPaymentId = razorpay_payment_id;
     user.razorpaySignature = razorpay_signature;
-    user.paymentAmount = 150;
+    user.paymentAmount = amountInRs;
     user.paymentCurrency = 'INR';
     user.paymentDate = now;
 
